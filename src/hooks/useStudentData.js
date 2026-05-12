@@ -13,24 +13,17 @@ function normalizeApiData(apiData) {
   const stats = apiData.stats || {};
   const concepts = apiData.concepts || [];
 
-  // Build books array from recentActivities (sorted oldest → newest)
-  const sorted = [...acts].sort((a, b) => new Date(a.completedAt) - new Date(b.completedAt));
-  const books = sorted.map((a, i) => ({
-    id: i + 1,
-    title: a.title,
-    shortTitle: a.title.length > 15 ? a.title.slice(0, 14) + '...' : a.title,
-    date: new Date(a.completedAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }),
-    activity: a.title,
-    cognitive: sk.cognitive ?? 2.8,
-    creative: sk.creative ?? 3,
-    communication: sk.communication ?? 2.2,
-    socialEmotional: sk.socialEmotional ?? 2.8,
-    physical: sk.physical ?? 2.2,
-    practical: sk.practical ?? 3,
-    avg: a.score ?? 2.5,
+  // ── Chart books: ALWAYS use static per-book skill data ─────────────────────
+  // The API only returns a single global average, not per-book skill scores.
+  // The static data has the correct per-book breakdown (Book 1→5 growth curves).
+  // Fix Bug 1: use staticStudent.books for the line chart.
+  // Fix Bug 3: ensure shortTitle is "Book N" for clean X-axis labels.
+  const chartBooks = staticStudent.books.map((b) => ({
+    ...b,
+    shortTitle: `Book ${b.id}`,  // clean X-axis: "Book 1", "Book 2" etc.
   }));
 
-  // Recent 3, newest first
+  // ── Recent 3 activities: from API, newest first ──────────────────────────
   const recent = [...acts]
     .sort((a, b) => new Date(b.completedAt) - new Date(a.completedAt))
     .slice(0, 3)
@@ -41,32 +34,45 @@ function normalizeApiData(apiData) {
       icon: ['📘', '📙', '📗'][i % 3],
     }));
 
+  // ── Skill averages: from API ─────────────────────────────────────────────
   const skillAverages = {
-    cognitive: sk.cognitive ?? 2.8,
-    creative: sk.creative ?? 3,
-    communication: sk.communication ?? 2.2,
-    socialEmotional: sk.socialEmotional ?? 2.8,
-    physical: sk.physical ?? 2.2,
-    practical: sk.practical ?? 3,
+    cognitive:       sk.cognitive       ?? staticStudent.skillAverages.cognitive,
+    creative:        sk.creative        ?? staticStudent.skillAverages.creative,
+    communication:   sk.communication   ?? staticStudent.skillAverages.communication,
+    socialEmotional: sk.socialEmotional ?? staticStudent.skillAverages.socialEmotional,
+    physical:        sk.physical        ?? staticStudent.skillAverages.physical,
+    practical:       sk.practical       ?? staticStudent.skillAverages.practical,
   };
 
   return {
-    name: s.name ?? staticStudent.name,
-    photo: staticStudent.photo, // keep local photo
-    level: s.level ?? staticStudent.level,
-    xp: s.xp ?? staticStudent.xp,
-    xpTarget: s.xpTarget ?? staticStudent.xpTarget,
-    explorerPoints: s.explorerPoints ?? staticStudent.explorerPoints,
-    badge: staticStudent.badge,
-    teacherNote: staticStudent.teacherNote,
-    grade: s.grade ?? '',
-    books: books.length ? books : staticStudent.books,
+    // Student info: from API
+    name:           s.name           ?? staticStudent.name,
+    photo:          staticStudent.photo,   // always local photo
+    level:          s.level          ?? staticStudent.level,
+    xp:             s.xp             ?? staticStudent.xp,
+    xpTarget:       s.xpTarget       ?? staticStudent.xpTarget,
+    explorerPoints: s.explorerPoints  ?? staticStudent.explorerPoints,
+    grade:          s.grade          ?? '',
+    badge:          staticStudent.badge,
+    teacherNote:    staticStudent.teacherNote,
+
+    // Chart: always static (correct per-book growth data)
+    books: chartBooks,
+
+    // Activities: from API (falls back to static if empty)
     recentActivities: recent.length ? recent : staticStudent.recentActivities,
+
+    // Skills: from API
     skillAverages,
-    milestones: staticStudent.milestones,
-    // extra API fields
+
+    // Concepts: from API
     concepts,
+
+    // Stats: from API
     stats,
+
+    // Milestones: static (not in API yet)
+    milestones: staticStudent.milestones,
   };
 }
 

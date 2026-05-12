@@ -1,6 +1,16 @@
 import React from 'react';
 
-const CONCEPT_COLORS = ['#6366f1', '#ec4899', '#f59e0b', '#10b981', '#ef4444', '#8b5cf6'];
+// Must match SKILL_COLORS in SkillGrowthChart and SKILL_META in SkillAveragesBars exactly
+const SUBJECT_COLOR_MAP = {
+  'Cognitive':        '#6366f1',  // indigo  — matches chart/bars
+  'Creative':         '#ec4899',  // pink
+  'Communication':    '#f59e0b',  // amber
+  'Social Emotional': '#10b981',  // green
+  'Social-Emotional': '#10b981',
+  'Physical':         '#ef4444',  // red
+  'Practical':        '#8b5cf6',  // purple
+};
+const FALLBACK_COLORS = ['#6366f1','#ec4899','#f59e0b','#10b981','#ef4444','#8b5cf6'];
 
 export default function ConceptProgress({ student }) {
   const concepts = student?.concepts;
@@ -12,25 +22,28 @@ export default function ConceptProgress({ student }) {
       <div className="card concept-progress-card" id="concept-progress">
         <h3 className="card-title">🧠 Concept Progress</h3>
         <div className="concept-items">
-          {concepts.map((c, i) => (
+          {concepts.map((c, i) => {
+            const color = SUBJECT_COLOR_MAP[c.subject] ?? FALLBACK_COLORS[i % FALLBACK_COLORS.length];
+            return (
             <div className="concept-item" key={i}>
               <div className="concept-item-header">
                 <span className="concept-item-label">{c.subject} — {c.conceptName}</span>
-                <span className="concept-item-value" style={{ color: CONCEPT_COLORS[i % CONCEPT_COLORS.length] }}>
+                <span className="concept-item-value" style={{ color }}>
                   {c.progressPercent}%
                 </span>
               </div>
               <div className="concept-bar-track">
                 <div
                   className="concept-bar-fill"
-                  style={{ width: `${c.progressPercent}%`, background: CONCEPT_COLORS[i % CONCEPT_COLORS.length] }}
+                  style={{ width: `${c.progressPercent}%`, background: color }}
                 />
               </div>
               {c.masteryLevel && (
                 <span className="mastery-tag">{c.masteryLevel}</span>
               )}
             </div>
-          ))}
+            );
+          })}
         </div>
       </div>
     );
