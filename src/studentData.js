@@ -1,6 +1,8 @@
+import diyaPhoto from './assets/diya.jpg';
+
 export const student = {
   name: "Diya Shah",
-  photo: "https://i.pravatar.cc/150?img=44",
+  photo: diyaPhoto,
   level: 3,
   xp: 520,
   xpTarget: 1000,
