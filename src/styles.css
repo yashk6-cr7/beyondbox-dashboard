@@ -1,0 +1,923 @@
+/* ═══════════════════════════════════════════
+   BEYOND BOX — STEM Dashboard Styles
+   ═══════════════════════════════════════════ */
+
+/* ── Reset & Base ─────────────────────────── */
+*,
+*::before,
+*::after {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html {
+  overflow-x: hidden;
+}
+
+body {
+  font-family: 'Nunito', sans-serif;
+  background: #f8f7ff;
+  color: #1e1e2f;
+  line-height: 1.6;
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── App Layout ───────────────────────────── */
+.app-layout {
+  min-height: 100vh;
+}
+
+.main-content {
+  margin-left: 220px;
+  padding: 1.5rem;
+  overflow-x: hidden;
+  min-height: 100vh;
+}
+
+/* ── Mobile Top Bar (hidden on desktop) ───── */
+.mobile-topbar {
+  display: none;
+}
+
+/* ── Sidebar ──────────────────────────────── */
+.sidebar {
+  background: #1a1a3e;
+  color: #ffffff;
+  width: 220px;
+  height: 100vh;
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+}
+
+.sidebar-overlay {
+  display: none;
+}
+
+.sidebar-close {
+  display: none;
+}
+
+.sidebar-header {
+  padding: 1.25rem 1rem 0.5rem;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.sidebar-logo {
+  display: flex;
+  flex-direction: column;
+}
+
+.sidebar-logo-text {
+  font-size: 1.25rem;
+  font-weight: 800;
+  letter-spacing: -0.5px;
+  color: #ffffff;
+}
+
+.sidebar-logo-sub {
+  font-size: 0.65rem;
+  color: #a0aec0;
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  margin-top: 2px;
+}
+
+.sidebar-profile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 1rem 1rem 0.75rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.sidebar-avatar {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 2px solid #7c3aed;
+  margin-bottom: 0.5rem;
+}
+
+.sidebar-name {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: #fff;
+}
+
+.sidebar-badge-pill {
+  display: inline-block;
+  margin-top: 0.35rem;
+  padding: 0.15rem 0.65rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: #92400e;
+  background: #fbbf24;
+  border-radius: 999px;
+}
+
+/* ── Sidebar Nav ──────────────────────────── */
+.sidebar-nav {
+  flex: 1;
+  padding: 0.75rem 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.sidebar-link {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.6rem 1rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #a0aec0;
+  background: none;
+  border: none;
+  border-left: 3px solid transparent;
+  cursor: pointer;
+  text-align: left;
+  width: 100%;
+  font-family: 'Nunito', sans-serif;
+  transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+}
+
+.sidebar-link:hover {
+  background: rgba(255, 255, 255, 0.07);
+  color: #ffffff;
+}
+
+.sidebar-link--active {
+  border-left-color: #7c3aed;
+  background: rgba(124, 58, 237, 0.15);
+  color: #ffffff;
+}
+
+.sidebar-link-emoji {
+  font-size: 1.1rem;
+  width: 1.5rem;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.sidebar-link-label {
+  white-space: nowrap;
+}
+
+/* ── Sidebar Footer ───────────────────────── */
+.sidebar-footer {
+  padding: 1rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.sidebar-xp-star {
+  font-size: 1.25rem;
+}
+
+.sidebar-xp-text {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #f59e0b;
+}
+
+/* ── Main Content ─────────────────────────── */
+/* (margin-left set above in App Layout section) */
+
+/* ── Dashboard Grid ───────────────────────── */
+.dashboard-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.25rem;
+  max-width: 1100px;
+  margin: 0 auto;
+}
+
+.full-width {
+  grid-column: 1 / -1;
+}
+
+/* ── Card Base ────────────────────────────── */
+.card {
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 14px;
+  padding: 1.25rem 1.5rem;
+  transition: box-shadow 0.2s ease;
+}
+
+.card:hover {
+  box-shadow: 0 4px 20px rgba(124, 58, 237, 0.08);
+}
+
+.card-title {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #1e1e2f;
+  margin-bottom: 0.75rem;
+}
+
+.card-subtitle {
+  font-size: 0.82rem;
+  color: #6b7280;
+  margin-top: -0.5rem;
+  margin-bottom: 1rem;
+}
+
+/* ── Welcome Card ─────────────────────────── */
+.welcome-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 1rem;
+  background: linear-gradient(135deg, #f8f7ff 0%, #ede9fe 100%);
+  border: 1px solid #ddd6fe;
+}
+
+.welcome-left {
+  flex: 1;
+  min-width: 200px;
+}
+
+.welcome-title {
+  font-size: clamp(1.2rem, 4vw, 1.6rem);
+  font-weight: 800;
+  color: #1e1e2f;
+}
+
+.welcome-subtitle {
+  font-size: 0.9rem;
+  color: #6b7280;
+  margin-top: 0.25rem;
+}
+
+.welcome-right {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.5rem;
+  min-width: 200px;
+}
+
+.level-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.35rem 0.85rem;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #7c3aed;
+  background: rgba(124, 58, 237, 0.12);
+  border-radius: 999px;
+  border: 1px solid rgba(124, 58, 237, 0.25);
+}
+
+.level-badge-icon {
+  font-size: 1rem;
+}
+
+.xp-bar-container {
+  width: 100%;
+  max-width: 220px;
+}
+
+.xp-bar-track {
+  width: 100%;
+  height: 10px;
+  background: #e5e7eb;
+  border-radius: 5px;
+  overflow: hidden;
+}
+
+.xp-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #7c3aed, #a78bfa);
+  border-radius: 5px;
+  transition: width 0.6s ease;
+}
+
+.xp-bar-label {
+  display: block;
+  margin-top: 0.3rem;
+  font-size: 0.72rem;
+  color: #9ca3af;
+  text-align: right;
+}
+
+/* ── Skill Growth Chart ───────────────────── */
+.skill-growth-card {
+  overflow: visible;
+}
+
+.chart-wrapper {
+  margin-top: 0.5rem;
+}
+
+.chart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  justify-content: center;
+  margin-bottom: 0.5rem;
+}
+
+.chart-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #4b5563;
+}
+
+.chart-legend-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  display: inline-block;
+  flex-shrink: 0;
+}
+
+/* ── Skill Average Bars ───────────────────── */
+.skill-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.skill-bar-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.skill-bar-label {
+  width: 110px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #4b5563;
+  flex-shrink: 0;
+}
+
+.skill-bar-track {
+  flex: 1;
+  height: 10px;
+  background: #e5e7eb;
+  border-radius: 5px;
+  overflow: hidden;
+}
+
+.skill-bar-fill {
+  height: 100%;
+  border-radius: 5px;
+  transition: width 0.5s ease;
+}
+
+.skill-bar-value {
+  width: 32px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #374151;
+  text-align: right;
+  flex-shrink: 0;
+}
+
+/* ── Concept Progress ─────────────────────── */
+.concept-items {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.concept-item-header {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 0.3rem;
+}
+
+.concept-item-label {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #4b5563;
+}
+
+.concept-item-value {
+  font-size: 0.85rem;
+  font-weight: 800;
+}
+
+.concept-bar-track {
+  width: 100%;
+  height: 8px;
+  background: #e5e7eb;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.concept-bar-fill {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.5s ease;
+}
+
+/* ── Recent Activity ──────────────────────── */
+.activity-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.activity-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.65rem 0.5rem;
+  border-radius: 8px;
+  transition: background 0.2s ease;
+  cursor: default;
+}
+
+.activity-row:hover {
+  background: rgba(124, 58, 237, 0.06);
+}
+
+.activity-icon {
+  font-size: 1.4rem;
+  flex-shrink: 0;
+}
+
+.activity-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.activity-title {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #1e1e2f;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.activity-book {
+  font-size: 0.75rem;
+  color: #9ca3af;
+}
+
+.activity-date {
+  font-size: 0.72rem;
+  color: #9ca3af;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.view-all-btn {
+  display: block;
+  margin-top: 0.85rem;
+  padding: 0.5rem 1rem;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #7c3aed;
+  background: rgba(124, 58, 237, 0.08);
+  border: 1px solid rgba(124, 58, 237, 0.2);
+  border-radius: 8px;
+  cursor: pointer;
+  font-family: 'Nunito', sans-serif;
+  transition: background 0.2s ease;
+  width: 100%;
+  text-align: center;
+}
+
+.view-all-btn:hover {
+  background: rgba(124, 58, 237, 0.15);
+}
+
+/* ── Milestone Badges ─────────────────────── */
+.milestone-grid {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.milestone-badge {
+  flex: 1;
+  min-width: 160px;
+  padding: 1.25rem;
+  border-radius: 14px;
+  border: 2px solid;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.4rem;
+  transition: transform 0.2s ease;
+}
+
+.milestone-badge:hover {
+  transform: translateY(-2px);
+}
+
+.milestone-emoji {
+  font-size: 2rem;
+}
+
+.milestone-title {
+  font-size: 0.9rem;
+  font-weight: 800;
+}
+
+.milestone-desc {
+  font-size: 0.75rem;
+  opacity: 0.8;
+  line-height: 1.4;
+}
+
+.milestone-badge--locked {
+  opacity: 0.7;
+}
+
+/* ── Activities Page ──────────────────────── */
+.activities-page {
+  max-width: 1100px;
+  margin: 0 auto;
+}
+
+.back-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.5rem 1rem;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #7c3aed;
+  background: rgba(124, 58, 237, 0.08);
+  border: 1px solid rgba(124, 58, 237, 0.2);
+  border-radius: 8px;
+  cursor: pointer;
+  font-family: 'Nunito', sans-serif;
+  margin-bottom: 1.25rem;
+  transition: background 0.2s ease;
+}
+
+.back-btn:hover {
+  background: rgba(124, 58, 237, 0.15);
+}
+
+.activities-title {
+  font-size: clamp(1.2rem, 4vw, 1.5rem);
+  font-weight: 800;
+  margin-bottom: 0.25rem;
+}
+
+.activities-subtitle {
+  font-size: 0.88rem;
+  color: #6b7280;
+  margin-bottom: 1.25rem;
+}
+
+.activities-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.25rem;
+}
+
+.activity-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.activity-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.activity-card-title {
+  font-size: 1rem;
+  font-weight: 700;
+  color: #1e1e2f;
+}
+
+.activity-card-book-badge {
+  flex-shrink: 0;
+  padding: 0.15rem 0.6rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: #7c3aed;
+  background: rgba(124, 58, 237, 0.1);
+  border-radius: 999px;
+}
+
+.activity-card-date {
+  font-size: 0.78rem;
+  color: #9ca3af;
+}
+
+.activity-card-desc {
+  font-size: 0.85rem;
+  color: #4b5563;
+}
+
+.activity-card-note {
+  font-size: 0.8rem;
+  color: #6b7280;
+}
+
+.activity-card-avg {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #4b5563;
+  margin-top: 0.25rem;
+}
+
+.avg-pill {
+  padding: 0.15rem 0.65rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  border-radius: 999px;
+}
+
+.activity-card-skills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 0.25rem;
+}
+
+.skill-chip {
+  padding: 0.15rem 0.55rem;
+  font-size: 0.68rem;
+  font-weight: 700;
+  border-radius: 6px;
+  border: 1px solid;
+  white-space: nowrap;
+}
+
+/* ── Parent Panel ─────────────────────────── */
+.parent-panel {
+  background: #eff6ff;
+  border-left: 4px solid #3b82f6;
+  border-radius: 14px;
+  padding: 1.25rem 1.5rem;
+}
+
+.teacher-quote {
+  font-style: italic;
+  color: #3b82f6;
+  font-size: 0.92rem;
+  font-weight: 600;
+  margin-bottom: 0.75rem;
+  padding-left: 0.75rem;
+  border-left: 3px solid #93c5fd;
+}
+
+.parent-summary {
+  font-size: 0.85rem;
+  color: #374151;
+  line-height: 1.7;
+  margin-bottom: 0.85rem;
+}
+
+.parent-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.parent-pill {
+  padding: 0.2rem 0.75rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  border-radius: 999px;
+}
+
+.parent-pill--badge {
+  background: #fef3c7;
+  color: #92400e;
+  border: 1px solid #fbbf24;
+}
+
+.parent-pill--top {
+  background: #d1fae5;
+  color: #065f46;
+  border: 1px solid #34d399;
+}
+
+.parent-pill--bottom {
+  background: #fef3c7;
+  color: #92400e;
+  border: 1px solid #fbbf24;
+}
+
+/* ═══════════════════════════════════════════
+   RESPONSIVE — MOBILE (max-width: 767px)
+   ═══════════════════════════════════════════ */
+@media (max-width: 767px) {
+  /* Switch to single column */
+  .app-layout {
+    display: block;
+  }
+
+  /* Mobile top bar */
+  .mobile-topbar {
+    display: flex;
+    align-items: center;
+    height: 56px;
+    background: #1a1a3e;
+    color: #fff;
+    padding: 0 1rem;
+    position: sticky;
+    top: 0;
+    z-index: 998;
+  }
+
+  .hamburger-btn {
+    width: 44px;
+    height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.4rem;
+    color: #fff;
+    background: none;
+    border: none;
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+
+  .mobile-topbar-title {
+    flex: 1;
+    text-align: center;
+    font-size: 1.1rem;
+    font-weight: 800;
+    letter-spacing: -0.5px;
+    margin-right: 44px; /* balance the hamburger */
+  }
+
+  /* Sidebar as drawer */
+  .sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 80vw;
+    max-width: 280px;
+    height: 100vh;
+    transform: translateX(-100%);
+    transition: transform 0.25s ease;
+    z-index: 1000;
+  }
+
+  .sidebar--open {
+    transform: translateX(0);
+  }
+
+  .sidebar-close {
+    display: block;
+    font-size: 1.3rem;
+    color: #a0aec0;
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 0.25rem;
+    line-height: 1;
+  }
+
+  .sidebar-overlay {
+    display: block;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 999;
+  }
+
+  /* Main content */
+  .main-content {
+    margin-left: 0;
+    padding: 1rem;
+  }
+
+  .dashboard-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .full-width {
+    grid-column: 1;
+  }
+
+  /* Welcome card stack */
+  .welcome-card {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .welcome-right {
+    align-items: flex-start;
+    width: 100%;
+  }
+
+  .xp-bar-container {
+    max-width: 100%;
+  }
+
+  /* Font sizes */
+  .welcome-title {
+    font-size: clamp(1.1rem, 5vw, 1.4rem);
+  }
+
+  .card-title {
+    font-size: clamp(0.95rem, 3.5vw, 1.05rem);
+  }
+
+  /* Skill bars */
+  .skill-bar-label {
+    width: 85px;
+    font-size: 0.72rem;
+  }
+
+  /* Chart text smaller */
+  .chart-legend {
+    gap: 0.5rem;
+  }
+
+  .chart-legend-item {
+    font-size: 0.65rem;
+  }
+
+  /* Milestones stack */
+  .milestone-grid {
+    flex-direction: column;
+  }
+
+  .milestone-badge {
+    min-width: auto;
+  }
+
+  /* Activities grid single col */
+  .activities-grid {
+    grid-template-columns: 1fr;
+  }
+
+  /* Cards spacing */
+  .card {
+    padding: 1rem 1rem;
+  }
+}
+
+/* ═══════════════════════════════════════════
+   TABLET (768px – 1024px) adjustments
+   ═══════════════════════════════════════════ */
+@media (min-width: 768px) and (max-width: 1024px) {
+  .sidebar {
+    width: 200px;
+  }
+
+  .main-content {
+    margin-left: 200px;
+    padding: 1.25rem;
+  }
+
+  .dashboard-grid {
+    gap: 1rem;
+  }
+}
+
+/* ═══════════════════════════════════════════
+   Scrollbar styling
+   ═══════════════════════════════════════════ */
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #d1d5db;
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #9ca3af;
+}
