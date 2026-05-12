@@ -1,53 +1,58 @@
 import React from 'react';
-import { student } from '../studentData';
 
-export default function ParentPanel() {
-  const avgs = student.skillAverages;
-  const sorted = Object.entries(avgs).sort((a, b) => b[1] - a[1]);
-  const top2 = sorted.slice(0, 2);
-  const bottom = sorted[sorted.length - 1];
-
-  const skillLabel = (key) => {
-    const map = {
-      cognitive: 'Cognitive',
-      creative: 'Creative',
-      communication: 'Communication',
-      socialEmotional: 'Social-Emotional',
-      physical: 'Physical',
-      practical: 'Practical',
-    };
-    return map[key] || key;
-  };
-
-  const lastBook = student.books[student.books.length - 1];
+export default function ParentPanel({ student }) {
+  const avgs = student?.skillAverages ?? {};
+  
+  // Find top 3 skills dynamically
+  const sortedSkills = Object.entries(avgs)
+    .sort(([, a], [, b]) => b - a)
+    .slice(0, 3)
+    .map(([key]) => {
+      const labels = {
+        cognitive: 'Problem Solving',
+        creative: 'Creative Thinking',
+        communication: 'Effective Communication',
+        socialEmotional: 'Collaboration',
+        physical: 'Active Participation',
+        practical: 'Practical Skills'
+      };
+      return labels[key] || key;
+    });
 
   return (
-    <div className="parent-panel" id="parent-panel">
-      <h3 className="card-title">👨‍👩‍👧 Parent & Teacher Summary</h3>
+    <div className="card parent-panel-card" id="parent-panel">
+      <div className="parent-panel-header">
+        <div className="parent-icon">💡</div>
+        <div className="parent-header-text">
+          <h3 className="card-title" style={{ margin: 0 }}>Parent & Teacher Insights</h3>
+          <p className="card-subtitle" style={{ margin: 0 }}>Understand the impact of the learning journey</p>
+        </div>
+      </div>
 
-      <blockquote className="teacher-quote">
-        "{student.teacherNote}"
-      </blockquote>
+      <div className="parent-summary">
+        <p className="summary-text">
+          {student?.name?.split(' ')[0]} has shown consistent engagement across all STEM modules. 
+          The data indicates a strong foundation in inquiry-based learning and conceptual understanding.
+        </p>
+        
+        <div className="insight-highlights">
+          <div className="insight-label">Key Strengths:</div>
+          <div className="insight-pills">
+            {sortedSkills.map((skill, i) => (
+              <span key={i} className="insight-pill">{skill}</span>
+            ))}
+          </div>
+        </div>
+      </div>
 
-      <p className="parent-summary">
-        {student.name} has completed <strong>{student.books.length} books</strong>. Her strongest skills are{' '}
-        <strong>{skillLabel(top2[0][0])}</strong> and <strong>{skillLabel(top2[1][0])}</strong> (avg {top2[0][1].toFixed(1)}/4).
-        She is currently an <strong>{student.badge}</strong>. Her most recent activity was{' '}
-        <strong>{lastBook.title}</strong> on {lastBook.date}.
-      </p>
-
-      <div className="parent-pills">
-        <span className="parent-pill parent-pill--badge">
-          {student.badge} ⭐
-        </span>
-        {top2.map(([key, val]) => (
-          <span className="parent-pill parent-pill--top" key={key}>
-            {skillLabel(key)}: {val.toFixed(1)}
-          </span>
-        ))}
-        <span className="parent-pill parent-pill--bottom">
-          {skillLabel(bottom[0])}: {bottom[1].toFixed(1)}
-        </span>
+      <div className="teacher-summary-section">
+        <div className="teacher-avatar">👩‍🏫</div>
+        <div className="teacher-message">
+          <div className="teacher-name">Coach Summary</div>
+          <p className="teacher-text">
+            "{student?.teacherNote ?? "Great progress this session! Focus on practical applications in the next module."}"
+          </p>
+        </div>
       </div>
     </div>
   );

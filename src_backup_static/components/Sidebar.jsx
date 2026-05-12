@@ -1,5 +1,5 @@
 import React from 'react';
-import { navLinks } from '../studentData';
+import { student, navLinks } from '../studentData';
 
 const navItems = [
   { key: 'home', label: 'Home', emoji: '🏠', action: 'external', url: navLinks.home },
@@ -11,7 +11,7 @@ const navItems = [
   { key: 'profile', label: 'Profile', emoji: '👤', action: 'scroll' },
 ];
 
-export default function Sidebar({ student, activePage, setActivePage, isOpen, onClose }) {
+export default function Sidebar({ activePage, setActivePage, isOpen, onClose }) {
   const handleNav = (item) => {
     if (item.action === 'internal') {
       setActivePage('activities');
@@ -53,13 +53,9 @@ export default function Sidebar({ student, activePage, setActivePage, isOpen, on
         </div>
 
         <div className="sidebar-profile">
-          <img
-            src={student?.photo}
-            alt={student?.name ?? 'Student'}
-            className="sidebar-avatar"
-          />
-          <span className="sidebar-name">{student?.name ?? '—'}</span>
-          <span className="sidebar-badge-pill">{student?.badge ?? 'Learner'}</span>
+          <img src={student.photo} alt={student.name} className="sidebar-avatar" />
+          <span className="sidebar-name">{student.name}</span>
+          <span className="sidebar-badge-pill">{student.badge}</span>
         </div>
 
         <nav className="sidebar-nav">
@@ -78,7 +74,7 @@ export default function Sidebar({ student, activePage, setActivePage, isOpen, on
 
         <div className="sidebar-footer">
           <span className="sidebar-xp-star">⭐</span>
-          <span className="sidebar-xp-text">{student?.explorerPoints ?? 0} Explorer Points</span>
+          <span className="sidebar-xp-text">{student.explorerPoints} Explorer Points</span>
         </div>
       </aside>
     </>

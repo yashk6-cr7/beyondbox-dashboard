@@ -1,13 +1,12 @@
 import React from 'react';
+import { student } from '../studentData';
 
-export default function MilestoneBadges({ student }) {
-  const milestones = student?.milestones ?? [];
-
+export default function MilestoneBadges() {
   return (
     <div className="card milestone-card" id="milestone-badges">
       <h3 className="card-title">🏅 Milestone Badges</h3>
       <div className="milestone-grid">
-        {milestones.map((m) => (
+        {student.milestones.map((m) => (
           <div
             className={`milestone-badge ${m.unlocked ? '' : 'milestone-badge--locked'}`}
             key={m.id}

@@ -3,6 +3,7 @@ import {
   LineChart, Line, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer, Legend
 } from 'recharts';
+import { student } from '../studentData';
 
 const SKILL_COLORS = {
   Cognitive: '#6366f1',
@@ -13,23 +14,20 @@ const SKILL_COLORS = {
   Practical: '#8b5cf6',
 };
 
-function buildChartData(books) {
-  if (!books?.length) return [];
-  return books.map((b) => ({
-    name: b.shortTitle,
-    Cognitive: b.cognitive,
-    Creative: b.creative,
-    Communication: b.communication,
-    'Social-Emotional': b.socialEmotional,
-    Physical: b.physical,
-    Practical: b.practical,
-  }));
-}
+const chartData = student.books.map((b) => ({
+  name: b.shortTitle,
+  Cognitive: b.cognitive,
+  Creative: b.creative,
+  Communication: b.communication,
+  'Social-Emotional': b.socialEmotional,
+  Physical: b.physical,
+  Practical: b.practical,
+}));
 
 function CustomLegend({ payload }) {
   return (
     <div className="chart-legend">
-      {(payload ?? []).map((entry) => (
+      {payload.map((entry) => (
         <span key={entry.value} className="chart-legend-item">
           <span className="chart-legend-dot" style={{ background: entry.color }} />
           {entry.value}
@@ -39,16 +37,11 @@ function CustomLegend({ payload }) {
   );
 }
 
-export default function SkillGrowthChart({ student }) {
-  const chartData = buildChartData(student?.books);
-
+export default function SkillGrowthChart() {
   return (
     <div className="card skill-growth-card" id="skill-growth-chart">
       <h3 className="card-title">📈 Skill Growth Across Books</h3>
-      <p className="card-subtitle">
-        Each line shows how one skill has grown across every book{' '}
-        {student?.name ?? 'the student'} completed
-      </p>
+      <p className="card-subtitle">Each line shows how one skill has grown across every book {student.name} completed</p>
       <div className="chart-wrapper">
         <ResponsiveContainer width="100%" height={300}>
           <LineChart data={chartData} margin={{ top: 10, right: 20, left: 0, bottom: 5 }}>
@@ -67,7 +60,9 @@ export default function SkillGrowthChart({ student }) {
               tickLine={false}
               label={{ value: 'Skill Score', angle: -90, position: 'insideLeft', style: { fontSize: 12, fill: '#9ca3af' } }}
             />
-            <Tooltip contentStyle={{ borderRadius: 10, border: '1px solid #e5e7eb', fontSize: 13 }} />
+            <Tooltip
+              contentStyle={{ borderRadius: 10, border: '1px solid #e5e7eb', fontSize: 13 }}
+            />
             <Legend content={<CustomLegend />} />
             {Object.entries(SKILL_COLORS).map(([skill, color]) => (
               <Line

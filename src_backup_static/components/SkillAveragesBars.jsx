@@ -1,4 +1,5 @@
 import React from 'react';
+import { student } from '../studentData';
 
 const SKILL_META = [
   { key: 'cognitive', label: 'Cognitive', color: '#6366f1' },
@@ -9,21 +10,22 @@ const SKILL_META = [
   { key: 'practical', label: 'Practical', color: '#8b5cf6' },
 ];
 
-export default function SkillAveragesBars({ student }) {
-  const avgs = student?.skillAverages ?? {};
-
+export default function SkillAveragesBars() {
   return (
     <div className="card skill-averages-card" id="skill-averages">
       <h3 className="card-title">📊 Average Skill Scores</h3>
       <div className="skill-bars">
         {SKILL_META.map((s) => {
-          const val = avgs[s.key] ?? 0;
+          const val = student.skillAverages[s.key];
           const pct = (val / 4) * 100;
           return (
             <div className="skill-bar-row" key={s.key}>
               <span className="skill-bar-label">{s.label}</span>
               <div className="skill-bar-track">
-                <div className="skill-bar-fill" style={{ width: `${pct}%`, background: s.color }} />
+                <div
+                  className="skill-bar-fill"
+                  style={{ width: `${pct}%`, background: s.color }}
+                />
               </div>
               <span className="skill-bar-value">{val.toFixed(1)}</span>
             </div>

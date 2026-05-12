@@ -1,5 +1,4 @@
 import React, { useState } from 'react';
-import { useStudentData } from './hooks/useStudentData';
 import Sidebar from './components/Sidebar';
 import WelcomeCard from './components/WelcomeCard';
 import SkillGrowthChart from './components/SkillGrowthChart';
@@ -13,19 +12,7 @@ import ParentPanel from './components/ParentPanel';
 export default function App() {
   const [activePage, setActivePage] = useState('dashboard');
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const { data: student, loading, error } = useStudentData();
 
-  // ── Loading state ─────────────────────────
-  if (loading) {
-    return (
-      <div className="loading-screen">
-        <div className="loading-spinner" />
-        <p className="loading-text">Loading your dashboard…</p>
-      </div>
-    );
-  }
-
-  // ── Render (error falls back to static via hook) ──
   return (
     <div className="app-layout">
       {/* Mobile top bar */}
@@ -42,7 +29,6 @@ export default function App() {
       </header>
 
       <Sidebar
-        student={student}
         activePage={activePage}
         setActivePage={setActivePage}
         isOpen={sidebarOpen}
@@ -50,34 +36,22 @@ export default function App() {
       />
 
       <main className="main-content">
-        {error && (
-          <div className="api-warning">
-            ⚠️ Using offline data — live sync unavailable
-          </div>
-        )}
-
         {activePage === 'activities' ? (
-          <ActivitiesPage
-            student={student}
-            onBack={() => setActivePage('dashboard')}
-          />
+          <ActivitiesPage onBack={() => setActivePage('dashboard')} />
         ) : (
           <div className="dashboard-grid">
             <div className="full-width">
-              <WelcomeCard student={student} />
+              <WelcomeCard />
             </div>
             <div className="full-width">
-              <SkillGrowthChart student={student} />
+              <SkillGrowthChart />
             </div>
-            <SkillAveragesBars student={student} />
-            <ConceptProgress student={student} />
-            <RecentActivity
-              student={student}
-              onViewAll={() => setActivePage('activities')}
-            />
-            <MilestoneBadges student={student} />
+            <SkillAveragesBars />
+            <ConceptProgress />
+            <RecentActivity onViewAll={() => setActivePage('activities')} />
+            <MilestoneBadges />
             <div className="full-width">
-              <ParentPanel student={student} />
+              <ParentPanel />
             </div>
           </div>
         )}
