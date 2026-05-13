@@ -13,9 +13,8 @@ import ParentPanel from './components/ParentPanel';
 export default function App() {
   const [activePage, setActivePage] = useState('dashboard');
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const { data: student, loading, error } = useStudentData();
+  const { data: student, loading, error, updatePhoto } = useStudentData();
 
-  // ── Loading state ─────────────────────────
   if (loading) {
     return (
       <div className="loading-screen">
@@ -25,19 +24,10 @@ export default function App() {
     );
   }
 
-  // ── Render (error falls back to static via hook) ──
   return (
     <div className="app-layout">
-      {/* Mobile top bar */}
       <header className="mobile-topbar">
-        <button
-          className="hamburger-btn"
-          onClick={() => setSidebarOpen(true)}
-          aria-label="Open menu"
-          id="hamburger-btn"
-        >
-          ☰
-        </button>
+        <button className="hamburger-btn" onClick={() => setSidebarOpen(true)} aria-label="Open menu" id="hamburger-btn">☰</button>
         <span className="mobile-topbar-title">beyond box</span>
       </header>
 
@@ -47,38 +37,23 @@ export default function App() {
         setActivePage={setActivePage}
         isOpen={sidebarOpen}
         onClose={() => setSidebarOpen(false)}
+        updatePhoto={updatePhoto}
       />
 
       <main className="main-content">
-        {error && (
-          <div className="api-warning">
-            ⚠️ Using offline data — live sync unavailable
-          </div>
-        )}
+        {error && <div className="api-warning">⚠️ Using offline data — live sync unavailable</div>}
 
         {activePage === 'activities' ? (
-          <ActivitiesPage
-            student={student}
-            onBack={() => setActivePage('dashboard')}
-          />
+          <ActivitiesPage student={student} onBack={() => setActivePage('dashboard')} />
         ) : (
           <div className="dashboard-grid">
-            <div className="full-width">
-              <WelcomeCard student={student} />
-            </div>
-            <div className="full-width">
-              <SkillGrowthChart student={student} />
-            </div>
+            <div className="full-width"><WelcomeCard student={student} /></div>
+            <div className="full-width"><SkillGrowthChart student={student} /></div>
             <SkillAveragesBars student={student} />
             <ConceptProgress student={student} />
-            <RecentActivity
-              student={student}
-              onViewAll={() => setActivePage('activities')}
-            />
-            <MilestoneBadges student={student} />
-            <div className="full-width">
-              <ParentPanel student={student} />
-            </div>
+            <RecentActivity student={student} onViewAll={() => setActivePage('activities')} />
+            <div className="full-width"><MilestoneBadges student={student} /></div>
+            <div className="full-width"><ParentPanel student={student} /></div>
           </div>
         )}
       </main>
