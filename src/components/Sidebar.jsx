@@ -7,8 +7,7 @@ const navItems = [
   { key:'simLab',       label:'Sim Lab',      emoji:'🔬', action:'external', url: navLinks.simLab },
   { key:'community',    label:'Community',    emoji:'👥', action:'external', url: navLinks.community },
   { key:'skillTracker', label:'Skill Tracker',emoji:'📊', action:'external', url: navLinks.skillTracker },
-  { key:'activities',   label:'Activities',   emoji:'🎯', action:'internal' },
-  { key:'profile',      label:'Profile',      emoji:'👤', action:'scroll' },
+  { key:'activities',   label:'My Community', emoji:'🎯', action:'internal' },
 ];
 
 export default function Sidebar({ student, activePage, setActivePage, isOpen, onClose, updatePhoto }) {
@@ -17,9 +16,6 @@ export default function Sidebar({ student, activePage, setActivePage, isOpen, on
   const handleNav = (item) => {
     if (item.action === 'internal') {
       setActivePage('activities'); onClose();
-    } else if (item.action === 'scroll') {
-      setActivePage('dashboard'); onClose();
-      setTimeout(() => { document.getElementById('parent-panel')?.scrollIntoView({ behavior: 'smooth' }); }, 100);
     } else {
       if (item.url === '/') {
         try { window.parent.location.href = item.url; } catch { window.open(item.url, '_self'); }
@@ -77,7 +73,7 @@ export default function Sidebar({ student, activePage, setActivePage, isOpen, on
             id="photo-file-input"
           />
           <span className="sidebar-name">{student?.name ?? '—'}</span>
-          {student?.grade && <span className="sidebar-grade">{student.grade}</span>}
+          {student?.grade && <span className="sidebar-grade" style={{ color:'rgba(255,255,255,0.85)', fontWeight:700 }}>{student.grade}</span>}
           <span className="sidebar-badge-pill">{student?.levelName ?? 'Explorer'}</span>
 
           {/* XP mini bar */}

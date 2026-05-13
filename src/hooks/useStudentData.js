@@ -87,6 +87,8 @@ function normalizeApiData(apiData) {
   const acts = apiData.recentActivities || [];
   const conc = apiData.concepts         || [];
   const stats= apiData.stats            || {};
+  const communityPosts = apiData.communityPosts || [];
+  const activityFeed   = apiData.activityFeed   || [];
 
   // Chart uses static per-book skill data (API has no per-book skill breakdown)
   const chartBooks = staticStudent.books.map(b => ({ ...b, shortTitle: `Book ${b.id}` }));
@@ -137,6 +139,8 @@ function normalizeApiData(apiData) {
     badges,
     booksCompleted,
     totalBooks:       TOTAL_BOOKS,
+    communityPosts,
+    activityFeed,
   };
 }
 
