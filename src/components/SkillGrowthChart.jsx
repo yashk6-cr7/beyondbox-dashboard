@@ -42,15 +42,15 @@ export default function SkillGrowthChart({ student }) {
   return (
     <div className="card skill-growth-card" id="skill-growth-chart">
       <h3 className="card-title">📈 Skill Growth Across Books</h3>
-      <p className="card-subtitle">Each line shows how a skill grew across every completed book (max score: 5)</p>
+      <p className="card-subtitle">Each line shows how a skill grew across every completed book (max score: 4)</p>
       <div className="chart-wrapper">
         <ResponsiveContainer width="100%" height={300}>
           <LineChart data={chartData} margin={{ top: 10, right: 20, left: 0, bottom: 5 }}>
             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e7eb" />
             <XAxis dataKey="name" tick={{ fontSize: 11, fill: '#6b7280' }} axisLine={{ stroke: '#e5e7eb' }} tickLine={false} />
             <YAxis
-              domain={[0, 5]}
-              ticks={[0, 1, 2, 3, 4, 5]}
+              domain={[0, 4]}
+              ticks={[0, 1, 2, 3, 4]}
               tick={{ fontSize: 12, fill: '#6b7280' }}
               axisLine={{ stroke: '#e5e7eb' }}
               tickLine={false}

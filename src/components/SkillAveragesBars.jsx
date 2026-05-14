@@ -15,11 +15,11 @@ export default function SkillAveragesBars({ student }) {
   return (
     <div className="card skill-averages-card" id="skill-averages">
       <h3 className="card-title">📊 Average Skill Scores</h3>
-      <p className="card-subtitle">Scores out of 5.0</p>
+      <p className="card-subtitle">Scores out of 4.0</p>
       <div className="skill-bars">
         {SKILL_META.map(s => {
           const val = avgs[s.key] ?? 0;
-          const pct = (val / 5) * 100;   // ← fixed: max is 5
+          const pct = (val / 4) * 100;   // ← max is 4
           return (
             <div className="skill-bar-row" key={s.key}>
               <span className="skill-bar-label">{s.label}</span>

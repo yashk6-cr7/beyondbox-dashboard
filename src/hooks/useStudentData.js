@@ -7,9 +7,9 @@ const STORAGE_KEY = 'beyondbox_photo_stu_001';
 const TOTAL_BOOKS = 11;
 const SKILLS = ['cognitive','creative','communication','socialEmotional','physical','practical'];
 
-// XP: each book gives up to 200 XP based on avg score (max 5)
+// XP: each book gives up to 200 XP based on avg score (max 4)
 function calcXP(books) {
-  return books.reduce((sum, b) => sum + Math.round((b.avg / 5) * 200), 0);
+  return books.reduce((sum, b) => sum + Math.round((b.avg / 4) * 200), 0);
 }
 
 // Level from XP thresholds (max 2200 XP across 11 books)
@@ -46,7 +46,7 @@ function calcBadges(books, skillAverages, booksCompleted, xp, level) {
 
   const skillVals = Object.values(skillAverages);
   const maxS = Math.max(...skillVals, 0);
-  const minS = Math.min(...skillVals, 5);
+  const minS = Math.min(...skillVals, 4);
 
   return [
     // ── Journey ────────────────────────────────────────────────────────────
