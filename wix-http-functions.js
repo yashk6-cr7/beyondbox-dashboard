@@ -1,5 +1,4 @@
 import wixData from 'wix-data';
-import { mediaManager } from 'wix-media-backend';
 
 // ── CORS Headers for HTTP Functions ──────────────────────────────────────────
 const CORS_HEADERS = {
@@ -11,6 +10,7 @@ const CORS_HEADERS = {
 
 // ============================================================================
 // 1. UPDATE STUDENT NAME
+// Saves the new name to UserRoles.fullName so it persists across all devices
 // ============================================================================
 export async function post_updateStudentName(request) {
   try {
@@ -21,7 +21,6 @@ export async function post_updateStudentName(request) {
       return { status: 400, headers: CORS_HEADERS, body: JSON.stringify({ error: 'Missing studentId or name' }) };
     }
 
-    // Find the student in UserRoles
     const roleResults = await wixData.query('UserRoles')
       .eq('memberId', studentId)
       .find({ suppressAuth: true });
@@ -29,7 +28,6 @@ export async function post_updateStudentName(request) {
     if (roleResults.items.length > 0) {
       const record = roleResults.items[0];
       record.fullName = name;
-      // Update the name in UserRoles
       await wixData.update('UserRoles', record, { suppressAuth: true });
       return { status: 200, headers: CORS_HEADERS, body: JSON.stringify({ success: true }) };
     } else {
@@ -47,67 +45,58 @@ export function options_updateStudentName(request) {
 
 // ============================================================================
 // 2. SAVE STUDENT PHOTO
+// Stores the base64 image string directly in the StudentPhotos CMS collection.
+// This approach is reliable in Wix Velo — NO Buffer, NO mediaManager needed.
+// The base64 string is stored in the `photo` field and returned as-is.
 // ============================================================================
 export async function post_saveStudentPhoto(request) {
   try {
     const body = await request.body.json();
-    const { studentId, base64, mimeType } = body;
+    const { studentId, base64 } = body;
 
     if (!studentId || !base64) {
-      return { status: 400, headers: CORS_HEADERS, body: JSON.stringify({ error: 'Missing studentId or base64 data' }) };
+      return {
+        status: 400,
+        headers: CORS_HEADERS,
+        body: JSON.stringify({ error: 'Missing studentId or base64 data' })
+      };
     }
 
-    // Strip the data:image/...;base64, prefix if present
-    const base64Data = base64.replace(/^data:image\/\w+;base64,/, "");
-    // Convert base64 to buffer
-    const buffer = Buffer.from(base64Data, 'base64');
-
-    // 1. Upload to Wix Media Manager
-    const uploadResult = await mediaManager.upload(
-      '/student-photos',
-      buffer,
-      `student_${studentId}.jpg`,
-      {
-        mediaOptions: {
-          mimeType: mimeType || 'image/jpeg',
-          mediaType: 'image'
-        },
-        metadataOptions: {
-          isPrivate: false,
-          isVisitorUpload: true
-        }
-      }
-    );
-
-    const wixImageUrl = uploadResult.fileUrl;
-
-    // 2. Save or update in StudentPhotos collection
-    const queryResult = await wixData.query('StudentPhotos')
+    // Check if a record already exists for this student
+    const existing = await wixData.query('StudentPhotos')
       .eq('studentId', studentId)
       .limit(1)
       .find({ suppressAuth: true });
 
-    if (queryResult.items.length > 0) {
-      // Update existing
-      const record = queryResult.items[0];
-      record.photoUrl = wixImageUrl;
+    if (existing.items.length > 0) {
+      // UPDATE existing record
+      const record = existing.items[0];
+      record.photo = base64;           // store base64 string directly
+      record.updatedAt = new Date();
       await wixData.update('StudentPhotos', record, { suppressAuth: true });
     } else {
-      // Create new
+      // INSERT new record
       await wixData.insert('StudentPhotos', {
+        title:     studentId,
         studentId: studentId,
-        photoUrl: wixImageUrl
+        photo:     base64,             // store base64 string directly
+        updatedAt: new Date()
       }, { suppressAuth: true });
     }
 
-    return { 
-      status: 200, 
-      headers: CORS_HEADERS, 
-      body: JSON.stringify({ success: true, url: wixImageUrl }) 
+    return {
+      status: 200,
+      headers: CORS_HEADERS,
+      body: JSON.stringify({ success: true, photoUrl: base64 })
     };
 
-  } catch (error) {
-    return { status: 500, headers: CORS_HEADERS, body: JSON.stringify({ error: error.message }) };
+  } catch (err) {
+    console.error('saveStudentPhoto error:', err);
+    return {
+      status: 500,
+      headers: CORS_HEADERS,
+      body: JSON.stringify({ success: false, error: err.message })
+    };
   }
 }
 

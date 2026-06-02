@@ -207,14 +207,15 @@ export function useStudentData() {
 
     const handler = (event) => {
       const msg = event.data;
-      // Accept: { type:'BEYONDBOX_MEMBER', memberId:'...' }  OR  { memberId:'...' }
-      if (msg && (msg.type === 'BEYONDBOX_MEMBER' || msg.memberId)) {
-        const id = msg.memberId;
-        if (id) {
-          console.log('[BeyondBox] Received memberId from Wix:', id);
-          setMemberId(id);
-          setWaitingForId(false);
-        }
+      // Accept ALL formats the Wix bridge might send:
+      // { studentId: '...' }  ← HTML bridge sends this
+      // { memberId: '...' }   ← Velo page code sends this
+      // { type:'BEYONDBOX_MEMBER', memberId:'...' }
+      const id = msg?.studentId || msg?.memberId;
+      if (msg && typeof msg === 'object' && id) {
+        console.log('[BeyondBox] Received memberId from Wix:', id);
+        setMemberId(id);
+        setWaitingForId(false);
       }
     };
 
@@ -273,24 +274,38 @@ export function useStudentData() {
     return () => { cancelled = true; };
   }, [memberId]);
 
-  // ── Photo update — also saves to Wix CMS via backend ─────────────────────
+  // ── Photo update — saves base64 directly to Wix CMS (no mediaManager needed) ─
   const updatePhoto = async (base64) => {
     if (!memberId) return;
-    const STORAGE_KEY = `beyondbox_photo_${memberId}`;
-    localStorage.setItem(STORAGE_KEY, base64);
+
+    // 1. Instantly update UI
     setData(prev => prev ? { ...prev, photo: base64 } : prev);
 
+    // 2. Cache in localStorage as fallback for same device
     try {
-      const mimeMatch = base64.match(/^data:(image\/\w+);base64,/);
-      const mimeType  = mimeMatch ? mimeMatch[1] : 'image/jpeg';
-      await fetch(`${WIX_BASE}/saveStudentPhoto`, {
+      const STORAGE_KEY = `beyondbox_photo_${memberId}`;
+      localStorage.setItem(STORAGE_KEY, base64);
+    } catch (_) {}
+
+    // 3. Save base64 directly to Wix CMS via backend
+    try {
+      const res = await fetch(`${WIX_BASE}/saveStudentPhoto`, {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ studentId: memberId, base64, mimeType }),
+        body:    JSON.stringify({ studentId: memberId, base64 }),
       });
-      console.log('[BeyondBox] Photo uploaded to CMS.');
+      if (res.ok) {
+        const json = await res.json();
+        console.log('[BeyondBox] Photo saved to CMS:', json);
+        // Update photo in state with the URL returned from CMS if available
+        if (json.photoUrl) {
+          setData(prev => prev ? { ...prev, photo: json.photoUrl } : prev);
+        }
+      } else {
+        console.warn('[BeyondBox] Photo save returned status:', res.status);
+      }
     } catch (err) {
-      console.warn('[BeyondBox] Photo upload failed (kept in localStorage):', err.message);
+      console.warn('[BeyondBox] Photo save failed (kept in localStorage):', err.message);
     }
   };
 
