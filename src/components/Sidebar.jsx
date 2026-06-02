@@ -10,7 +10,7 @@ const navItems = [
   { key:'activities',   label:'My Community', emoji:'🎯', action:'internal' },
 ];
 
-export default function Sidebar({ student, activePage, setActivePage, isOpen, onClose, updatePhoto }) {
+export default function Sidebar({ student, activePage, setActivePage, isOpen, onClose, updatePhoto, updateName }) {
   const fileInputRef = useRef(null);
 
   const handleNav = (item) => {
@@ -43,6 +43,29 @@ export default function Sidebar({ student, activePage, setActivePage, isOpen, on
     (key === 'activities' && activePage === 'activities') ||
     (key === 'home' && activePage === 'dashboard');
 
+  const [isEditingName, setIsEditingName] = React.useState(false);
+  const [editNameValue, setEditNameValue] = React.useState('');
+
+  const handleEditNameClick = () => {
+    setEditNameValue(student?.name ?? '');
+    setIsEditingName(true);
+  };
+
+  const handleNameSave = () => {
+    if (editNameValue.trim() !== '') {
+      updateName(editNameValue.trim());
+    }
+    setIsEditingName(false);
+  };
+
+  const handleNameKeyDown = (e) => {
+    if (e.key === 'Enter') {
+      handleNameSave();
+    } else if (e.key === 'Escape') {
+      setIsEditingName(false);
+    }
+  };
+
   // Auto-calculate XP progress for next level
   const xpPct = student?.xpTarget ? Math.min(Math.round((student.xp / student.xpTarget) * 100), 100) : 0;
 
@@ -72,7 +95,26 @@ export default function Sidebar({ student, activePage, setActivePage, isOpen, on
             onChange={handleFileChange}
             id="photo-file-input"
           />
-          <span className="sidebar-name">{student?.name ?? '—'}</span>
+          
+          {isEditingName ? (
+            <div className="sidebar-name-edit">
+              <input 
+                type="text" 
+                value={editNameValue} 
+                onChange={(e) => setEditNameValue(e.target.value)}
+                onKeyDown={handleNameKeyDown}
+                onBlur={handleNameSave}
+                autoFocus
+                className="sidebar-name-input"
+              />
+            </div>
+          ) : (
+            <div className="sidebar-name-display" onClick={handleEditNameClick} title="Click to edit name">
+              <span className="sidebar-name">{student?.name ?? '—'}</span>
+              <span className="sidebar-name-edit-icon">✏️</span>
+            </div>
+          )}
+          
           {student?.grade && <span className="sidebar-grade" style={{ color:'rgba(255,255,255,0.85)', fontWeight:700 }}>{student.grade}</span>}
           <span className="sidebar-badge-pill">{student?.levelName ?? 'Explorer'}</span>
 
