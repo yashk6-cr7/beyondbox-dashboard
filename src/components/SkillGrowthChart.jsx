@@ -37,7 +37,18 @@ function CustomLegend({ payload }) {
 }
 
 export default function SkillGrowthChart({ student }) {
-  const chartData = buildChartData(student?.books);
+  const books = student?.books || [];
+  const chartData = buildChartData(books);
+
+  if (books.length === 0) {
+    return (
+      <div className="card skill-growth-card" id="skill-growth-chart" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '3rem 1rem', textAlign: 'center', minHeight: '200px' }}>
+        <div style={{ fontSize: '2rem', marginBottom: '1rem' }}>📊</div>
+        <h3 className="card-title" style={{ marginBottom: '0.5rem' }}>No scores yet</h3>
+        <p className="card-subtitle" style={{ margin: 0 }}>Your tutor will add scores after each book.</p>
+      </div>
+    );
+  }
 
   return (
     <div className="card skill-growth-card" id="skill-growth-chart">

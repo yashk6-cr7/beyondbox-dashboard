@@ -6,24 +6,10 @@ const TOTAL_BOOKS  = 11;
 const SKILLS       = ['cognitive','creative','communication','socialEmotional','physical','practical'];
 
 // ─── XP & LEVEL CALC ─────────────────────────────────────────────────────────
-function calcXP(books) {
-  if (!books?.length) return 100;
-  return books.reduce((sum, b) => sum + Math.round((b.avg / 4) * 200), 100);
-}
+// Level and XP calculation moved to the backend to ensure consistency.
 
 const LEVEL_THRESHOLDS = [0, 400, 800, 1200, 1600, 2200];
 const LEVEL_NAMES      = ['', 'Beginner Explorer', 'Junior Scientist', 'STEM Explorer', 'Science Leader', 'STEM Champion'];
-
-function calcLevel(xp) {
-  for (let i = LEVEL_THRESHOLDS.length - 1; i >= 0; i--) {
-    if (xp >= LEVEL_THRESHOLDS[i]) return Math.min(i + 1, 5);
-  }
-  return 1;
-}
-
-function calcXPTarget(level) {
-  return LEVEL_THRESHOLDS[Math.min(level, LEVEL_THRESHOLDS.length - 1)];
-}
 
 // ─── BADGE CALC ───────────────────────────────────────────────────────────────
 function calcBadges(books, skillAverages, booksCompleted, xp, level) {
@@ -119,12 +105,12 @@ function normalizeApiData(apiData, memberId) {
       icon: ['📘','📙','📗'][i % 3],
     }));
 
-  // ── XP + level (calculated from real completed books) ────────────────────
+  // ── XP + level (from CMS) ────────────────────────────────────────────────
   const booksCompleted = stats.booksCompleted ?? books.length;
   const completedBooks = books.slice(0, booksCompleted);
-  const totalXP        = calcXP(completedBooks);
-  const level          = calcLevel(totalXP);
-  const xpTarget       = calcXPTarget(level);
+  const totalXP        = s.xp ?? 100;
+  const level          = s.level ?? 1;
+  const xpTarget       = s.xpTarget ?? 400;
   const badges         = calcBadges(completedBooks, skillAverages, booksCompleted, totalXP, level);
 
   // ── Photo: CMS → localStorage cache → fallback placeholder ───────────────
