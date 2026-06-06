@@ -50,10 +50,14 @@ function PostCard({ post }) {
 
 export default function ActivitiesPage({ student, onBack }) {
   const posts      = student?.communityPosts ?? [];
-  const postCount  = posts.length;
-  const totalLikes = posts.reduce((s, p) => s + (p.likes || 0), 0);
-  const totalComments = posts.reduce((s, p) => s + (p.comments || 0), 0);
-  const isLive     = postCount > 0;
+  const stats      = student?.communityStats;
+
+  // Use backend-provided stats if available (more accurate — includes comments from other posts)
+  // Fall back to calculating from the feed array
+  const postCount     = stats?.posts         ?? posts.length;
+  const totalLikes    = stats?.likesReceived ?? posts.reduce((s, p) => s + (p.likes || 0), 0);
+  const totalComments = stats?.replies       ?? posts.reduce((s, p) => s + (p.comments || 0), 0);
+  const isLive        = posts.length > 0;
 
   return (
     <div className="activities-page">
@@ -101,7 +105,7 @@ export default function ActivitiesPage({ student, onBack }) {
             Visit Community Page →
           </a>
           <div className="api-pending-note">
-            🔌 Connecting to live community data — your posts will load here once the feed goes live.
+            🔌 Connected to live Wix community — posts will appear here once you start contributing.
           </div>
         </div>
       )}

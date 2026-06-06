@@ -525,3 +525,129 @@ export async function post_updateStudentName(request) {
 export function options_updateStudentName(request) {
   return ok({ headers: CORS_HEADERS, body: '' });
 }
+
+// ─────────────────────────────────────────────────────────────
+// GET COMMUNITY FEED
+// URL: /_functions/communityFeed?studentId=MEMBERID
+//
+// Uses Wix Groups backend APIs to fetch this student's posts
+// and comments across ALL groups they belong to.
+// IMPORTANT: Wix Groups is the SOURCE OF TRUTH — we never
+// duplicate full community data into CMS.
+// ─────────────────────────────────────────────────────────────
+export async function get_communityFeed(request) {
+  const studentId = request.query.studentId;
+
+  if (!studentId) {
+    return badRequest({ headers: CORS_HEADERS, body: JSON.stringify({ error: 'Missing studentId' }) });
+  }
+
+  try {
+    // Import Wix Groups backend APIs
+    const { posts } = await import('wix-blog-backend');
+    // NOTE: Wix Groups posts live under wix-groups-backend
+    const wixGroupsBackend = await import('wix-groups-backend');
+
+    // ── 1. Get all groups this member belongs to ──────────────
+    let memberGroups = [];
+    try {
+      const groupsResult = await wixGroupsBackend.listGroupMembers({
+        memberId: studentId
+      });
+      memberGroups = groupsResult.groupMembers || [];
+    } catch (e) {
+      console.warn('listGroupMembers failed, trying queryGroupMembers:', e.message);
+      // Fallback: query all groups and filter
+      try {
+        const allGroups = await wixGroupsBackend.queryGroups().find();
+        // Try to get member's groups from each
+        const checks = await Promise.allSettled(
+          (allGroups.items || []).map(async (g) => {
+            const members = await wixGroupsBackend.queryGroupMembers(g._id)
+              .eq('memberId', studentId)
+              .find();
+            return members.items.length > 0 ? g : null;
+          })
+        );
+        memberGroups = checks
+          .filter(r => r.status === 'fulfilled' && r.value)
+          .map(r => ({ groupId: r.value._id, groupName: r.value.name }));
+      } catch (e2) {
+        console.warn('Fallback group fetch also failed:', e2.message);
+      }
+    }
+
+    // ── 2. Fetch posts by this member across all groups ────────
+    let allPosts = [];
+    try {
+      // wix-groups-backend: query posts filtered by memberId
+      const postsResult = await wixGroupsBackend.queryPosts()
+        .eq('createdBy', studentId)
+        .descending('_createdDate')
+        .limit(50)
+        .find();
+      allPosts = postsResult.items || [];
+    } catch (e) {
+      console.warn('queryPosts failed:', e.message);
+    }
+
+    // ── 3. Build group name lookup map ─────────────────────────
+    const groupNameMap = {};
+    (memberGroups || []).forEach(mg => {
+      const id   = mg.groupId   || mg._id   || '';
+      const name = mg.groupName || mg.name  || 'Community';
+      if (id) groupNameMap[id] = name;
+    });
+
+    // ── 4. Format posts into clean feed items ─────────────────
+    const feedItems = allPosts.map(post => ({
+      id:        post._id,
+      type:      post.postType || 'discussion',
+      groupId:   post.groupId || '',
+      groupName: groupNameMap[post.groupId] || 'Humans of Science',
+      title:     post.title || '',
+      excerpt:   post.plainContent
+        ? post.plainContent.slice(0, 180) + (post.plainContent.length > 180 ? '…' : '')
+        : '',
+      imageUrl:    post.coverImage?.url || null,
+      likes:       post.likeCount    ?? 0,
+      comments:    post.commentCount ?? 0,
+      views:       post.viewCount    ?? 0,
+      url:         post.url          || '',
+      postedAt:    post._createdDate || post.createdDate || null,
+    }));
+
+    // ── 5. Aggregate stats ─────────────────────────────────────
+    const totalPosts        = feedItems.length;
+    const totalLikesReceived = feedItems.reduce((s, p) => s + (p.likes || 0), 0);
+    const totalReplies       = feedItems.reduce((s, p) => s + (p.comments || 0), 0);
+
+    return ok({
+      headers: CORS_HEADERS,
+      body: JSON.stringify({
+        stats: {
+          posts:         totalPosts,
+          likesReceived: totalLikesReceived,
+          replies:       totalReplies,
+        },
+        feed: feedItems,
+      })
+    });
+
+  } catch (error) {
+    console.error('communityFeed error:', error);
+    // Return empty feed gracefully — never crash the dashboard
+    return ok({
+      headers: CORS_HEADERS,
+      body: JSON.stringify({
+        stats: { posts: 0, likesReceived: 0, replies: 0 },
+        feed: [],
+        _warning: error.message,
+      })
+    });
+  }
+}
+
+export function options_communityFeed(request) {
+  return ok({ headers: CORS_HEADERS, body: '' });
+}

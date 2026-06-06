@@ -245,6 +245,30 @@ export function useStudentData() {
           setData(normalizeApiData(json, memberId));
           setError(null);
         }
+
+        // ── Non-blocking: fetch community feed separately ─────────
+        // Dashboard is already shown above; community wall loads in bg
+        if (!cancelled) {
+          try {
+            const commUrl = `${WIX_BASE}/communityFeed?studentId=${encodeURIComponent(memberId)}`;
+            console.log('[BeyondBox] Fetching community feed:', commUrl);
+            const commRes = await fetch(commUrl);
+            if (commRes.ok) {
+              const commJson = await commRes.json();
+              console.log('[BeyondBox] Community feed:', commJson);
+              if (!cancelled) {
+                setData(prev => prev ? {
+                  ...prev,
+                  communityPosts:  commJson.feed  || [],
+                  communityStats:  commJson.stats || { posts: 0, likesReceived: 0, replies: 0 },
+                } : prev);
+              }
+            }
+          } catch (commErr) {
+            console.warn('[BeyondBox] Community feed fetch failed (non-fatal):', commErr.message);
+          }
+        }
+
       } catch (err) {
         console.warn('[BeyondBox] API failed:', err.message);
         if (!cancelled) {
