@@ -530,120 +530,117 @@ export function options_updateStudentName(request) {
 // GET COMMUNITY FEED
 // URL: /_functions/communityFeed?studentId=MEMBERID
 //
-// Uses Wix Groups backend APIs to fetch this student's posts
-// and comments across ALL groups they belong to.
-// IMPORTANT: Wix Groups is the SOURCE OF TRUTH — we never
-// duplicate full community data into CMS.
+// Architecture:
+//   Wix Groups → Wix Automations → CommunityActivity CMS
+//   → This endpoint → React dashboard
+//
+// Reads CommunityActivity CMS (populated by Automations).
+// React dashboard NEVER queries Wix Groups directly.
 // ─────────────────────────────────────────────────────────────
 export async function get_communityFeed(request) {
   const studentId = request.query.studentId;
 
   if (!studentId) {
-    return badRequest({ headers: CORS_HEADERS, body: JSON.stringify({ error: 'Missing studentId' }) });
+    return badRequest({
+      headers: CORS_HEADERS,
+      body: JSON.stringify({ error: 'Missing studentId' })
+    });
   }
 
   try {
-    // Import Wix Groups backend APIs
-    const { posts } = await import('wix-blog-backend');
-    // NOTE: Wix Groups posts live under wix-groups-backend
-    const wixGroupsBackend = await import('wix-groups-backend');
 
-    // ── 1. Get all groups this member belongs to ──────────────
-    let memberGroups = [];
-    try {
-      const groupsResult = await wixGroupsBackend.listGroupMembers({
-        memberId: studentId
-      });
-      memberGroups = groupsResult.groupMembers || [];
-    } catch (e) {
-      console.warn('listGroupMembers failed, trying queryGroupMembers:', e.message);
-      // Fallback: query all groups and filter
-      try {
-        const allGroups = await wixGroupsBackend.queryGroups().find();
-        // Try to get member's groups from each
-        const checks = await Promise.allSettled(
-          (allGroups.items || []).map(async (g) => {
-            const members = await wixGroupsBackend.queryGroupMembers(g._id)
-              .eq('memberId', studentId)
-              .find();
-            return members.items.length > 0 ? g : null;
-          })
-        );
-        memberGroups = checks
-          .filter(r => r.status === 'fulfilled' && r.value)
-          .map(r => ({ groupId: r.value._id, groupName: r.value.name }));
-      } catch (e2) {
-        console.warn('Fallback group fetch also failed:', e2.message);
+    const result = await wixData.query('CommunityActivity')
+      .eq('memberId', studentId)
+      .descending('_createdDate')
+      .limit(100)
+      .find({ suppressAuth: true });
+
+    const items = result.items || [];
+
+    const feed = items.map(item => {
+
+      let title   = '';
+      let excerpt = '';
+      let type    = 'activity';
+
+      // ── POST ─────────────────────────────────────────────────
+      if (item.activityType === 'post_created') {
+        type    = 'discussion';
+        title   = `Posted in ${item.groupName || 'Community'}`;
+        excerpt = item.postContent || 'Created a community post';
       }
-    }
 
-    // ── 2. Fetch posts by this member across all groups ────────
-    let allPosts = [];
-    try {
-      // wix-groups-backend: query posts filtered by memberId
-      const postsResult = await wixGroupsBackend.queryPosts()
-        .eq('createdBy', studentId)
-        .descending('_createdDate')
-        .limit(50)
-        .find();
-      allPosts = postsResult.items || [];
-    } catch (e) {
-      console.warn('queryPosts failed:', e.message);
-    }
+      // ── COMMENT ───────────────────────────────────────────────
+      else if (item.activityType === 'comment_created') {
+        type    = 'comment';
+        title   = 'Commented on a post';
+        excerpt = item.commentContent || 'Added a comment';
+      }
 
-    // ── 3. Build group name lookup map ─────────────────────────
-    const groupNameMap = {};
-    (memberGroups || []).forEach(mg => {
-      const id   = mg.groupId   || mg._id   || '';
-      const name = mg.groupName || mg.name  || 'Community';
-      if (id) groupNameMap[id] = name;
+      // ── POST REACTION ─────────────────────────────────────────
+      else if (item.activityType === 'post_reaction') {
+        type    = 'reaction';
+        title   = 'Reacted to a post';
+        excerpt = item.reactionType
+          ? `Reaction: ${item.reactionType}`
+          : 'Reacted to a community post';
+      }
+
+      // ── COMMENT REACTION ──────────────────────────────────────
+      else if (item.activityType === 'comment_reaction') {
+        type    = 'reaction';
+        title   = 'Reacted to a comment';
+        excerpt = item.reactionType
+          ? `Reaction: ${item.reactionType}`
+          : 'Reacted to a comment';
+      }
+
+      // ── GROUP JOIN ────────────────────────────────────────────
+      else if (item.activityType === 'group_joined') {
+        type    = 'group';
+        title   = `Joined ${item.groupName || 'a group'}`;
+        excerpt = 'Became part of the community';
+      }
+
+      return {
+        id:       item._id,
+        type,
+        title,
+        excerpt,
+        imageUrl: item.mediaType === 'image' ? item.mediaUrl : null,
+        likes:    0,
+        comments: 0,
+        views:    0,
+        url:      item.postUrl || item.groupLink || 'https://www.thebeyondbox.org/groups',
+        postedAt: item.activityDate || item._createdDate,
+      };
     });
 
-    // ── 4. Format posts into clean feed items ─────────────────
-    const feedItems = allPosts.map(post => ({
-      id:        post._id,
-      type:      post.postType || 'discussion',
-      groupId:   post.groupId || '',
-      groupName: groupNameMap[post.groupId] || 'Humans of Science',
-      title:     post.title || '',
-      excerpt:   post.plainContent
-        ? post.plainContent.slice(0, 180) + (post.plainContent.length > 180 ? '…' : '')
-        : '',
-      imageUrl:    post.coverImage?.url || null,
-      likes:       post.likeCount    ?? 0,
-      comments:    post.commentCount ?? 0,
-      views:       post.viewCount    ?? 0,
-      url:         post.url          || '',
-      postedAt:    post._createdDate || post.createdDate || null,
-    }));
-
-    // ── 5. Aggregate stats ─────────────────────────────────────
-    const totalPosts        = feedItems.length;
-    const totalLikesReceived = feedItems.reduce((s, p) => s + (p.likes || 0), 0);
-    const totalReplies       = feedItems.reduce((s, p) => s + (p.comments || 0), 0);
+    // ── Stats ─────────────────────────────────────────────────
+    const totalPosts   = items.filter(i => i.activityType === 'post_created').length;
+    const totalReplies = items.filter(i => i.activityType === 'comment_created').length;
+    const totalLikes   = items.filter(i =>
+      i.activityType === 'post_reaction' ||
+      i.activityType === 'comment_reaction'
+    ).length;
 
     return ok({
       headers: CORS_HEADERS,
       body: JSON.stringify({
         stats: {
           posts:         totalPosts,
-          likesReceived: totalLikesReceived,
+          likesReceived: totalLikes,
           replies:       totalReplies,
         },
-        feed: feedItems,
+        feed,
       })
     });
 
   } catch (error) {
     console.error('communityFeed error:', error);
-    // Return empty feed gracefully — never crash the dashboard
-    return ok({
+    return serverError({
       headers: CORS_HEADERS,
-      body: JSON.stringify({
-        stats: { posts: 0, likesReceived: 0, replies: 0 },
-        feed: [],
-        _warning: error.message,
-      })
+      body: JSON.stringify({ error: error.message })
     });
   }
 }

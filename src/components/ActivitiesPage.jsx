@@ -1,13 +1,18 @@
 import React from 'react';
 
-const COMMUNITY_URL = 'https://www.thebeyondbox.org/group/humans-of-science-1/discussion';
+const COMMUNITY_URL = 'https://www.thebeyondbox.org/groups';
 
-// Post type color map
+// Activity type color map (covers both old post types and new CMS activity types)
 const POST_TYPE_META = {
+  // Existing post types
   discussion: { label: 'Discussion', color: '#6366f1', emoji: '💬' },
   question:   { label: 'Question',   color: '#f59e0b', emoji: '❓' },
   project:    { label: 'Project',    color: '#10b981', emoji: '🔬' },
   media:      { label: 'Media',      color: '#ec4899', emoji: '🖼️' },
+  // CMS activity types from communityFeed endpoint
+  comment:    { label: 'Comment',    color: '#0ea5e9', emoji: '💬' },
+  reaction:   { label: 'Reaction',   color: '#f97316', emoji: '❤️' },
+  group:      { label: 'Joined',     color: '#10b981', emoji: '🌍' },
   default:    { label: 'Post',       color: '#8b5cf6', emoji: '📝' },
 };
 
