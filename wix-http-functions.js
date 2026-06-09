@@ -557,28 +557,41 @@ export async function get_communityFeed(request) {
 
     const items = result.items || [];
 
+    // ── Helper: normalise activityType so Automation spelling
+    //    variations all resolve correctly.
+    //    e.g. "Group Joined", "groupJoined", "group_joined" → "group_joined"
+    function normalise(raw) {
+      return (raw || '')
+        .trim()
+        .toLowerCase()
+        .replace(/\s+/g, '_')   // spaces → underscores
+        .replace(/-/g, '_');    // hyphens → underscores
+    }
+
     const feed = items.map(item => {
+
+      const at = normalise(item.activityType);
 
       let title   = '';
       let excerpt = '';
-      let type    = 'activity';
+      let type    = 'default';
 
       // ── POST ─────────────────────────────────────────────────
-      if (item.activityType === 'post_created') {
+      if (at === 'post_created' || at === 'postcreated') {
         type    = 'discussion';
         title   = `Posted in ${item.groupName || 'Community'}`;
         excerpt = item.postContent || 'Created a community post';
       }
 
       // ── COMMENT ───────────────────────────────────────────────
-      else if (item.activityType === 'comment_created') {
+      else if (at === 'comment_created' || at === 'commentcreated') {
         type    = 'comment';
         title   = 'Commented on a post';
         excerpt = item.commentContent || 'Added a comment';
       }
 
       // ── POST REACTION ─────────────────────────────────────────
-      else if (item.activityType === 'post_reaction') {
+      else if (at === 'post_reaction' || at === 'postreaction') {
         type    = 'reaction';
         title   = 'Reacted to a post';
         excerpt = item.reactionType
@@ -587,7 +600,7 @@ export async function get_communityFeed(request) {
       }
 
       // ── COMMENT REACTION ──────────────────────────────────────
-      else if (item.activityType === 'comment_reaction') {
+      else if (at === 'comment_reaction' || at === 'commentreaction') {
         type    = 'reaction';
         title   = 'Reacted to a comment';
         excerpt = item.reactionType
@@ -596,33 +609,69 @@ export async function get_communityFeed(request) {
       }
 
       // ── GROUP JOIN ────────────────────────────────────────────
-      else if (item.activityType === 'group_joined') {
+      //    Catches: "group_joined", "Group Joined", "groupJoined",
+      //             "joined_group", "group_join", etc.
+      else if (
+        at === 'group_joined'  ||
+        at === 'groupjoined'   ||
+        at === 'joined_group'  ||
+        at === 'group_join'    ||
+        at.includes('join')    ||
+        at.startsWith('group')
+      ) {
         type    = 'group';
         title   = `Joined ${item.groupName || 'a group'}`;
-        excerpt = 'Became part of the community';
+        excerpt = item.groupName
+          ? `You are now part of the ${item.groupName} community`
+          : 'Became part of the community';
       }
+
+      // ── UNKNOWN ───────────────────────────────────────────────
+      else {
+        type    = 'default';
+        title   = item.groupName ? `Activity in ${item.groupName}` : 'Community activity';
+        excerpt = item.postContent || item.commentContent || '';
+      }
+
+      // imageUrl: use any mediaUrl that exists (media type field is unreliable)
+      const imageUrl = item.mediaUrl || null;
+
+      // url: for posts/reactions use postUrl; for groups use groupLink; fallback to community
+      const url =
+        item.postUrl    ||
+        item.groupLink  ||
+        'https://www.thebeyondbox.org/group/humans-of-science-1/discussion';
 
       return {
         id:       item._id,
         type,
         title,
         excerpt,
-        imageUrl: item.mediaType === 'image' ? item.mediaUrl : null,
-        likes:    0,
-        comments: 0,
-        views:    0,
-        url:      item.postUrl || item.groupLink || 'https://www.thebeyondbox.org/groups',
+        imageUrl,
+        url,
         postedAt: item.activityDate || item._createdDate,
+        // likes / comments / views intentionally omitted — not available from CMS
       };
     });
 
-    // ── Stats ─────────────────────────────────────────────────
-    const totalPosts   = items.filter(i => i.activityType === 'post_created').length;
-    const totalReplies = items.filter(i => i.activityType === 'comment_created').length;
-    const totalLikes   = items.filter(i =>
-      i.activityType === 'post_reaction' ||
-      i.activityType === 'comment_reaction'
-    ).length;
+    // ── Stats (use normalised matching so counts are accurate) ──
+    const totalPosts   = items.filter(i => {
+      const at = normalise(i.activityType);
+      return at === 'post_created' || at === 'postcreated';
+    }).length;
+
+    const totalReplies = items.filter(i => {
+      const at = normalise(i.activityType);
+      return at === 'comment_created' || at === 'commentcreated';
+    }).length;
+
+    const totalLikes = items.filter(i => {
+      const at = normalise(i.activityType);
+      return (
+        at === 'post_reaction'    || at === 'postreaction'    ||
+        at === 'comment_reaction' || at === 'commentreaction'
+      );
+    }).length;
 
     return ok({
       headers: CORS_HEADERS,

@@ -1,6 +1,6 @@
 import React from 'react';
 
-const COMMUNITY_URL = 'https://www.thebeyondbox.org/groups';
+const COMMUNITY_URL = 'https://www.thebeyondbox.org/group/humans-of-science-1/discussion';
 
 // Activity type color map (covers both old post types and new CMS activity types)
 const POST_TYPE_META = {
@@ -22,6 +22,9 @@ function PostCard({ post }) {
     ? new Date(post.postedAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
     : post.date || '—';
 
+  // Context-aware button label
+  const btnLabel = post.type === 'group' ? 'Open Group →' : 'View Post →';
+
   return (
     <div className="community-post-card">
       {post.imageUrl && (
@@ -37,15 +40,10 @@ function PostCard({ post }) {
         {post.excerpt && <p className="post-excerpt">{post.excerpt}</p>}
         <div className="post-footer">
           <span className="post-date">📅 {date}</span>
-          <div className="post-stats">
-            {post.likes    != null && <span>❤️ {post.likes}</span>}
-            {post.comments != null && <span>💬 {post.comments}</span>}
-            {post.views    != null && <span>👁️ {post.views}</span>}
-          </div>
         </div>
         {post.url && (
           <a href={post.url} target="_blank" rel="noopener noreferrer" className="post-read-btn">
-            View Post →
+            {btnLabel}
           </a>
         )}
       </div>
