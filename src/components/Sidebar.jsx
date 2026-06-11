@@ -16,6 +16,14 @@ export default function Sidebar({ student, activePage, setActivePage, isOpen, on
   const handleNav = (item) => {
     if (item.action === 'internal') {
       setActivePage('activities'); onClose();
+    } else if (item.key === 'skillTracker') {
+      // Navigate Wix parent page to Skill Tracker in the SAME tab (not a new tab)
+      try {
+        window.parent.location.href = 'https://www.thebeyondbox.org/skill-tracker';
+      } catch {
+        window.location.href = 'https://www.thebeyondbox.org/skill-tracker';
+      }
+      onClose();
     } else {
       if (item.url === '/') {
         try { window.parent.location.href = item.url; } catch { window.open(item.url, '_self'); }
