@@ -4,7 +4,7 @@ import Sidebar from './components/Sidebar';
 import WelcomeCard from './components/WelcomeCard';
 import SkillGrowthChart from './components/SkillGrowthChart';
 import SkillAveragesBars from './components/SkillAveragesBars';
-import ConceptProgress from './components/ConceptProgress';
+import ConceptProgress, { LearningProgress } from './components/ConceptProgress';
 import RecentActivity from './components/RecentActivity';
 import MilestoneBadges from './components/MilestoneBadges';
 import ActivitiesPage from './components/ActivitiesPage';
@@ -84,12 +84,24 @@ export default function App() {
           <ActivitiesPage student={student} onBack={() => setActivePage('dashboard')} />
         ) : (
           <div className="dashboard-grid">
+            {/* Row 1: full-width welcome */}
             <div className="full-width"><WelcomeCard student={student} /></div>
+
+            {/* Row 2: full-width skill chart */}
             <div className="full-width"><SkillGrowthChart student={student} /></div>
+
+            {/* Row 3: Average Skill Scores | Concept Progress (side by side) */}
             <SkillAveragesBars student={student} />
             <ConceptProgress student={student} />
+
+            {/* Row 4: Learning Progress | Recent Activity (side by side) */}
+            <LearningProgress student={student} />
             <RecentActivity student={student} onViewAll={() => setActivePage('activities')} />
+
+            {/* Row 5: Milestones full-width */}
             <div className="full-width"><MilestoneBadges student={student} /></div>
+
+            {/* Row 6: Parent panel full-width */}
             <div className="full-width"><ParentPanel student={student} /></div>
           </div>
         )}

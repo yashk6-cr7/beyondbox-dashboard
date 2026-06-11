@@ -17,6 +17,133 @@ const CORS_HEADERS = {
 };
 
 // ─────────────────────────────────────────────────────────────
+// SKILL → SUBJECT + CONCEPT MAPPING
+// Used by updateConceptProgress to generate one CMS entry per skill.
+// ─────────────────────────────────────────────────────────────
+const CONCEPT_MAP = {
+  physical: {
+    subject:     'Physical',
+    conceptName: 'Motor Skills & Participation'
+  },
+  practical: {
+    subject:     'Practical',
+    conceptName: 'Hands-on Application'
+  },
+  socialEmotional: {
+    subject:     'Social Emotional',
+    conceptName: 'Collaboration'
+  },
+  communication: {
+    subject:     'Communication',
+    conceptName: 'Expression'
+  },
+  creative: {
+    subject:     'Creative',
+    conceptName: 'Idea Generation'
+  },
+  cognitive: {
+    subject:     'Cognitive',
+    conceptName: 'Problem Solving'
+  }
+};
+
+// ─────────────────────────────────────────────────────────────
+// INTERNAL: Determine mastery level from percentage
+// ─────────────────────────────────────────────────────────────
+function getMasteryLevel(percent) {
+  if (percent >= 75) return 'Strong';
+  if (percent >= 50) return 'Developing';
+  return 'Needs Support';
+}
+
+// ─────────────────────────────────────────────────────────────
+// INTERNAL: Aggregate BookScores → update ConceptProgress CMS
+// Called automatically whenever a BookScore is saved or updated.
+// Architecture: BookScores → Backend Aggregation → ConceptProgress CMS → Dashboard UI
+//
+// Flow:
+//   1. Read studentId from current BookScore entry
+//   2. Fetch ALL BookScores for that student
+//   3. For each of 6 skills: sum totalScore, calculate progressPercent, determine masteryLevel
+//   4. Upsert one ConceptProgress entry per skill (keyed by studentId + subject)
+// ─────────────────────────────────────────────────────────────
+async function updateConceptProgress(studentId) {
+  try {
+    // STEP 1 + 2: Fetch ALL book scores for this student
+    const bookResult = await wixData.query('BookScores')
+      .eq('studentId', studentId)
+      .limit(1000)
+      .find({ suppressAuth: true });
+
+    const books = bookResult.items || [];
+    const totalBooksCompleted = books.length;
+
+    if (totalBooksCompleted === 0) {
+      console.log(`[ConceptProgress] No books found for student ${studentId} — skipping.`);
+      return;
+    }
+
+    // Max possible score per skill per book is 4
+    const maxPossibleScore = totalBooksCompleted * 4;
+
+    // STEP 3: For each skill, calculate totals and upsert ConceptProgress
+    const skills = Object.keys(CONCEPT_MAP);
+
+    await Promise.all(skills.map(async (skillKey) => {
+      const { subject, conceptName } = CONCEPT_MAP[skillKey];
+
+      // Sum all scores for this skill across all books
+      const totalScore = books.reduce((sum, book) => {
+        return sum + Number(book[skillKey] || 0);
+      }, 0);
+
+      // Calculate percentage, rounded to 2 decimal places
+      const progressPercent = maxPossibleScore > 0
+        ? Math.round((totalScore / maxPossibleScore) * 10000) / 100
+        : 0;
+
+      const masteryLevel = getMasteryLevel(progressPercent);
+
+      const entryData = {
+        studentId,
+        subject,
+        conceptName,
+        progressPercent,
+        masteryLevel,
+        totalBooksCompleted,
+        totalScore,
+        maxPossibleScore,
+        lastUpdated: new Date()
+      };
+
+      // STEP 7: Upsert — find existing entry by studentId + subject
+      const existing = await wixData.query('ConceptProgress')
+        .eq('studentId', studentId)
+        .eq('subject', subject)
+        .limit(1)
+        .find({ suppressAuth: true });
+
+      if (existing.items.length > 0) {
+        // Update existing entry
+        await wixData.update('ConceptProgress', {
+          ...existing.items[0],
+          ...entryData,
+          _id: existing.items[0]._id
+        }, { suppressAuth: true });
+      } else {
+        // Insert new entry
+        await wixData.insert('ConceptProgress', entryData, { suppressAuth: true });
+      }
+    }));
+
+    console.log(`[ConceptProgress] Updated 6 concept entries for student ${studentId}`);
+  } catch (err) {
+    // Non-fatal: log error but don't break the parent request
+    console.error('[ConceptProgress] updateConceptProgress error:', err.message);
+  }
+}
+
+// ─────────────────────────────────────────────────────────────
 // GET USER ID
 // ─────────────────────────────────────────────────────────────
 export async function get_userid(request) {
@@ -57,7 +184,7 @@ export async function get_studentDashboard(request) {
       .ascending('_createdDate')
       .find({ suppressAuth: true });
 
-    // GET CONCEPTS
+    // GET CONCEPTS (pre-aggregated by updateConceptProgress)
     const conceptResult = await wixData.query('ConceptProgress')
       .eq('studentId', studentId)
       .find({ suppressAuth: true });
@@ -94,24 +221,24 @@ export async function get_studentDashboard(request) {
 
     if (booksCompleted > 0) {
       const totals = books.reduce((acc, b) => {
-        acc.cognitive += Number(b.cognitive || 0);
-        acc.creative += Number(b.creative || 0);
-        acc.communication += Number(b.communication || 0);
+        acc.cognitive       += Number(b.cognitive       || 0);
+        acc.creative        += Number(b.creative        || 0);
+        acc.communication   += Number(b.communication   || 0);
         acc.socialEmotional += Number(b.socialEmotional || 0);
-        acc.physical += Number(b.physical || 0);
-        acc.practical += Number(b.practical || 0);
-        acc.averageScore += Number(b.averageScore || 0);
+        acc.physical        += Number(b.physical        || 0);
+        acc.practical       += Number(b.practical       || 0);
+        acc.averageScore    += Number(b.averageScore    || 0);
         return acc;
       }, { cognitive: 0, creative: 0, communication: 0, socialEmotional: 0, physical: 0, practical: 0, averageScore: 0 });
 
       skills = {
-        cognitive: Number((totals.cognitive / booksCompleted).toFixed(2)),
-        creative: Number((totals.creative / booksCompleted).toFixed(2)),
-        communication: Number((totals.communication / booksCompleted).toFixed(2)),
+        cognitive:       Number((totals.cognitive       / booksCompleted).toFixed(2)),
+        creative:        Number((totals.creative        / booksCompleted).toFixed(2)),
+        communication:   Number((totals.communication   / booksCompleted).toFixed(2)),
         socialEmotional: Number((totals.socialEmotional / booksCompleted).toFixed(2)),
-        physical: Number((totals.physical / booksCompleted).toFixed(2)),
-        practical: Number((totals.practical / booksCompleted).toFixed(2)),
-        averageScore: Number((totals.averageScore / booksCompleted).toFixed(2))
+        physical:        Number((totals.physical        / booksCompleted).toFixed(2)),
+        practical:       Number((totals.practical       / booksCompleted).toFixed(2)),
+        averageScore:    Number((totals.averageScore    / booksCompleted).toFixed(2))
       };
     }
 
@@ -132,9 +259,9 @@ export async function get_studentDashboard(request) {
       headers: CORS_HEADERS,
       body: {
         student: {
-          studentId: student.memberId,
-          name:      student.fullName || student.email || 'Student',
-          grade:     student.batchName || '',
+          studentId:     student.memberId,
+          name:          student.fullName || student.email || 'Student',
+          grade:         student.batchName || '',
           level,
           xp,
           xpTarget,
@@ -156,6 +283,7 @@ export async function get_studentDashboard(request) {
           practical:       Number(item.practical       || 0),
           avg:             Number(item.averageScore    || 0)
         })),
+        // Frontend reads ConceptProgress data as-is — no recalculation needed
         concepts: conceptResult.items.map(item => ({
           subject:         item.subject,
           conceptName:     item.conceptName,
@@ -326,10 +454,13 @@ export async function get_getBatchStudents(request) {
           memberId, name: student.fullName || student.email, email: student.email,
           batchName: student.batchName, tutorComment: student.tutorComment || '',
           skillScores: skillScores ? {
-            cognitive: skillScores.cognitive || 0, creative: skillScores.creative || 0,
-            communication: skillScores.communication || 0, socialEmotional: skillScores.socialEmotional || 0,
-            physical: skillScores.physical || 0, practical: skillScores.practical || 0,
-            averageScore: skillScores.averageScore || 0
+            cognitive:       skillScores.cognitive       || 0,
+            creative:        skillScores.creative        || 0,
+            communication:   skillScores.communication   || 0,
+            socialEmotional: skillScores.socialEmotional || 0,
+            physical:        skillScores.physical        || 0,
+            practical:       skillScores.practical       || 0,
+            averageScore:    skillScores.averageScore    || 0
           } : null,
           activitiesCount: activityResults.items.length
         };
@@ -695,5 +826,208 @@ export async function get_communityFeed(request) {
 }
 
 export function options_communityFeed(request) {
+  return ok({ headers: CORS_HEADERS, body: '' });
+}
+
+// ─────────────────────────────────────────────────────────────
+// SKILL TRACKER INIT
+// URL: /_functions/skillTrackerInit?memberId=MEMBERID
+// ─────────────────────────────────────────────────────────────
+export async function get_skillTrackerInit(request) {
+  try {
+    const { memberId } = request.query;
+    if (!memberId) {
+      return badRequest({ headers: CORS_HEADERS, body: JSON.stringify({ error: 'memberId required' }) });
+    }
+
+    const roleResult = await wixData.query('UserRoles')
+      .eq('memberId', memberId)
+      .limit(1)
+      .find({ suppressAuth: true });
+
+    if (roleResult.items.length === 0) {
+      return notFound({ headers: CORS_HEADERS, body: JSON.stringify({ error: 'User not found in UserRoles' }) });
+    }
+
+    const userRole = roleResult.items[0];
+    const role     = userRole.role;
+    const canEdit  = role === 'home_learner';
+
+    const scoresResult = await wixData.query('BookScores')
+      .eq('studentId', memberId)
+      .find({ suppressAuth: true });
+
+    const scores = scoresResult.items.map(item => ({
+      bookId: item.bookKey,
+      ratings: {
+        cognitive:       Number(item.cognitive       || 0),
+        creative:        Number(item.creative        || 0),
+        communication:   Number(item.communication   || 0),
+        socialEmotional: Number(item.socialEmotional || 0),
+        physical:        Number(item.physical        || 0),
+        practical:       Number(item.practical       || 0)
+      },
+      averageScore: Number(item.averageScore || 0),
+      completedAt:  item.updatedAt ? new Date(item.updatedAt).toISOString() : new Date().toISOString()
+    }));
+
+    return ok({
+      headers: CORS_HEADERS,
+      body: JSON.stringify({
+        role, canEdit, memberId,
+        tutorId:   userRole.tutorId   || null,
+        batchName: userRole.batchName || '',
+        fullName:  userRole.fullName  || '',
+        remarks:   userRole.tutorComment || '',
+        scores
+      })
+    });
+
+  } catch (err) {
+    console.error('skillTrackerInit error:', err);
+    return serverError({ headers: CORS_HEADERS, body: JSON.stringify({ error: err.message }) });
+  }
+}
+
+export function options_skillTrackerInit(request) {
+  return ok({ headers: CORS_HEADERS, body: '' });
+}
+
+
+// ─────────────────────────────────────────────────────────────
+// SAVE BOOK SCORE (home_learner only)
+// POST /_functions/saveBookScore
+//
+// After saving the BookScore, automatically:
+//   → triggers updateConceptProgress(studentId)
+//   → aggregates all BookScores for that student
+//   → upserts 6 ConceptProgress entries (one per skill)
+//
+// Architecture: BookScores → Backend → ConceptProgress CMS → Dashboard
+// ─────────────────────────────────────────────────────────────
+export async function post_saveBookScore(request) {
+  try {
+    const body = await request.body.json();
+    const {
+      memberId, bookId, bookName,
+      cognitive, creative, communication,
+      socialEmotional, physical, practical
+    } = body;
+
+    if (!memberId || !bookId) {
+      return badRequest({ headers: CORS_HEADERS, body: JSON.stringify({ error: 'memberId and bookId required' }) });
+    }
+
+    const roleResult = await wixData.query('UserRoles')
+      .eq('memberId', memberId)
+      .limit(1)
+      .find({ suppressAuth: true });
+
+    if (roleResult.items.length === 0) {
+      return notFound({ headers: CORS_HEADERS, body: JSON.stringify({ error: 'User not found' }) });
+    }
+
+    const userRole = roleResult.items[0];
+
+    if (userRole.role !== 'home_learner') {
+      return badRequest({ headers: CORS_HEADERS, body: JSON.stringify({ error: 'Only home_learner can save scores' }) });
+    }
+
+    const skillValues  = [cognitive, creative, communication, socialEmotional, physical, practical].map(Number);
+    const averageScore = Number((skillValues.reduce((a, b) => a + b, 0) / skillValues.length).toFixed(2));
+
+    const scoreData = {
+      // NOTE: 'title' field is intentionally omitted — ConceptProgress does not use it
+      studentId:       memberId,
+      tutorId:         userRole.tutorId   || '',
+      batchName:       userRole.batchName || '',
+      bookKey:         bookId,
+      bookName:        bookName || bookId,
+      cognitive:       Number(cognitive       || 0),
+      creative:        Number(creative        || 0),
+      communication:   Number(communication   || 0),
+      socialEmotional: Number(socialEmotional || 0),
+      physical:        Number(physical        || 0),
+      practical:       Number(practical       || 0),
+      averageScore,
+      updatedAt: new Date()
+    };
+
+    const existing = await wixData.query('BookScores')
+      .eq('studentId', memberId)
+      .eq('bookKey',   bookId)
+      .limit(1)
+      .find({ suppressAuth: true });
+
+    let action = 'inserted';
+    if (existing.items.length > 0) {
+      await wixData.update('BookScores',
+        { ...existing.items[0], ...scoreData, _id: existing.items[0]._id },
+        { suppressAuth: true }
+      );
+      action = 'updated';
+    } else {
+      await wixData.insert('BookScores', scoreData, { suppressAuth: true });
+    }
+
+    // ── DYNAMIC CONCEPT PROGRESS AGGREGATION ──────────────────
+    // Automatically recalculate and store all 6 skill-wise
+    // ConceptProgress entries for this student.
+    // studentId is always read from the BookScore — never hardcoded.
+    await updateConceptProgress(memberId);
+
+    return ok({ headers: CORS_HEADERS, body: JSON.stringify({ success: true, action, averageScore }) });
+
+  } catch (err) {
+    console.error('saveBookScore error:', err);
+    return serverError({ headers: CORS_HEADERS, body: JSON.stringify({ error: err.message }) });
+  }
+}
+
+export function options_saveBookScore(request) {
+  return ok({ headers: CORS_HEADERS, body: '' });
+}
+
+
+// ─────────────────────────────────────────────────────────────
+// SAVE HOME LEARNER REMARKS (home_learner only)
+// POST /_functions/saveHomeLearnerRemarks
+// ─────────────────────────────────────────────────────────────
+export async function post_saveHomeLearnerRemarks(request) {
+  try {
+    const body = await request.body.json();
+    const { memberId, remarks } = body;
+
+    if (!memberId) {
+      return badRequest({ headers: CORS_HEADERS, body: JSON.stringify({ error: 'memberId required' }) });
+    }
+
+    const roleResult = await wixData.query('UserRoles')
+      .eq('memberId', memberId)
+      .limit(1)
+      .find({ suppressAuth: true });
+
+    if (roleResult.items.length === 0) {
+      return notFound({ headers: CORS_HEADERS, body: JSON.stringify({ error: 'User not found' }) });
+    }
+
+    const userRole = roleResult.items[0];
+
+    if (userRole.role !== 'home_learner') {
+      return badRequest({ headers: CORS_HEADERS, body: JSON.stringify({ error: 'Only home_learner can save remarks' }) });
+    }
+
+    userRole.tutorComment = remarks || '';
+    await wixData.update('UserRoles', userRole, { suppressAuth: true });
+
+    return ok({ headers: CORS_HEADERS, body: JSON.stringify({ success: true }) });
+
+  } catch (err) {
+    console.error('saveHomeLearnerRemarks error:', err);
+    return serverError({ headers: CORS_HEADERS, body: JSON.stringify({ error: err.message }) });
+  }
+}
+
+export function options_saveHomeLearnerRemarks(request) {
   return ok({ headers: CORS_HEADERS, body: '' });
 }

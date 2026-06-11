@@ -981,14 +981,51 @@ body {
 
 .mastery-tag {
   display: inline-block;
-  background: #f0f9ff;
-  color: #0369a1;
   padding: 2px 8px;
   border-radius: 4px;
   font-size: 0.65rem;
   font-weight: 700;
   text-transform: uppercase;
+  letter-spacing: 0.04em;
   margin-top: 4px;
+  /* default (fallback) */
+  background: #f0f9ff;
+  color: #0369a1;
+}
+
+/* Strong — green */
+.mastery-tag--strong {
+  background: #d1fae5;
+  color: #065f46;
+}
+
+/* Developing — amber */
+.mastery-tag--developing {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+/* Needs Support — red/rose */
+.mastery-tag--needs-support {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+/* Empty state inside concept progress card */
+.concept-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 1.5rem 0;
+  color: #9ca3af;
+  font-size: 0.85rem;
+  text-align: center;
+}
+
+.concept-empty-icon {
+  font-size: 2rem;
 }
 
 /* --- Avatar Edit Overlay --------------------------------------- */
