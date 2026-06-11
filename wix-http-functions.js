@@ -1,3 +1,12 @@
+// @ts-nocheck
+/* eslint-disable */
+// ─────────────────────────────────────────────────────────────
+// WIX BACKEND FILE — paste into: backend/http-functions.js
+// This file runs inside Wix Velo (server-side) only.
+// Red underlines in VS Code are expected — wix-* packages
+// exist only on the Wix platform and are NOT npm packages.
+// ─────────────────────────────────────────────────────────────
+
 // backend/http-functions.js
 
 import { currentMember } from 'wix-members-backend';
@@ -58,18 +67,9 @@ function getMasteryLevel(percent) {
 
 // ─────────────────────────────────────────────────────────────
 // INTERNAL: Aggregate BookScores → update ConceptProgress CMS
-// Called automatically whenever a BookScore is saved or updated.
-// Architecture: BookScores → Backend Aggregation → ConceptProgress CMS → Dashboard UI
-//
-// Flow:
-//   1. Read studentId from current BookScore entry
-//   2. Fetch ALL BookScores for that student
-//   3. For each of 6 skills: sum totalScore, calculate progressPercent, determine masteryLevel
-//   4. Upsert one ConceptProgress entry per skill (keyed by studentId + subject)
 // ─────────────────────────────────────────────────────────────
 async function updateConceptProgress(studentId) {
   try {
-    // STEP 1 + 2: Fetch ALL book scores for this student
     const bookResult = await wixData.query('BookScores')
       .eq('studentId', studentId)
       .limit(1000)
@@ -80,24 +80,22 @@ async function updateConceptProgress(studentId) {
 
     if (totalBooksCompleted === 0) {
       console.log(`[ConceptProgress] No books found for student ${studentId} — skipping.`);
-      return;
+      return { success: true, message: 'No books found' };
     }
 
-    // Max possible score per skill per book is 4
     const maxPossibleScore = totalBooksCompleted * 4;
-
-    // STEP 3: For each skill, calculate totals and upsert ConceptProgress
     const skills = Object.keys(CONCEPT_MAP);
+
+    let inserted = 0;
+    let updated = 0;
 
     await Promise.all(skills.map(async (skillKey) => {
       const { subject, conceptName } = CONCEPT_MAP[skillKey];
 
-      // Sum all scores for this skill across all books
       const totalScore = books.reduce((sum, book) => {
         return sum + Number(book[skillKey] || 0);
       }, 0);
 
-      // Calculate percentage, rounded to 2 decimal places
       const progressPercent = maxPossibleScore > 0
         ? Math.round((totalScore / maxPossibleScore) * 10000) / 100
         : 0;
@@ -105,6 +103,7 @@ async function updateConceptProgress(studentId) {
       const masteryLevel = getMasteryLevel(progressPercent);
 
       const entryData = {
+        title: `${subject} - ${conceptName}`, // Often required by Wix CMS
         studentId,
         subject,
         conceptName,
@@ -116,7 +115,6 @@ async function updateConceptProgress(studentId) {
         lastUpdated: new Date()
       };
 
-      // STEP 7: Upsert — find existing entry by studentId + subject
       const existing = await wixData.query('ConceptProgress')
         .eq('studentId', studentId)
         .eq('subject', subject)
@@ -124,22 +122,22 @@ async function updateConceptProgress(studentId) {
         .find({ suppressAuth: true });
 
       if (existing.items.length > 0) {
-        // Update existing entry
         await wixData.update('ConceptProgress', {
           ...existing.items[0],
           ...entryData,
           _id: existing.items[0]._id
         }, { suppressAuth: true });
+        updated++;
       } else {
-        // Insert new entry
         await wixData.insert('ConceptProgress', entryData, { suppressAuth: true });
+        inserted++;
       }
     }));
 
-    console.log(`[ConceptProgress] Updated 6 concept entries for student ${studentId}`);
+    return { success: true, inserted, updated };
   } catch (err) {
-    // Non-fatal: log error but don't break the parent request
     console.error('[ConceptProgress] updateConceptProgress error:', err.message);
+    throw new Error(`ConceptProgress Aggregation Error: ${err.message}`);
   }
 }
 
@@ -974,9 +972,14 @@ export async function post_saveBookScore(request) {
     // Automatically recalculate and store all 6 skill-wise
     // ConceptProgress entries for this student.
     // studentId is always read from the BookScore — never hardcoded.
-    await updateConceptProgress(memberId);
+    let conceptUpdateResult = null;
+    try {
+      conceptUpdateResult = await updateConceptProgress(memberId);
+    } catch (conceptErr) {
+      conceptUpdateResult = { success: false, error: conceptErr.message };
+    }
 
-    return ok({ headers: CORS_HEADERS, body: JSON.stringify({ success: true, action, averageScore }) });
+    return ok({ headers: CORS_HEADERS, body: JSON.stringify({ success: true, action, averageScore, conceptUpdateResult }) });
 
   } catch (err) {
     console.error('saveBookScore error:', err);
