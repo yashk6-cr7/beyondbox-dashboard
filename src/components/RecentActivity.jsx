@@ -69,20 +69,7 @@ function FeedItem({ item, index }) {
 }
 
 export default function RecentActivity({ student, onViewAll }) {
-  const feed   = student?.activityFeed ?? [];
-  const isLive = feed.length > 0;
-
-  // Fallback: build basic feed from recentActivities (book-derived) if activityFeed not ready
-  const fallbackFeed = (student?.recentActivities ?? []).map(a => ({
-    type:         a.type         || 'books',
-    activityType: a.activityType || 'book_completed',
-    icon:         a.icon         ?? '📚',
-    title:        a.title,
-    detail:       a.book         || '',
-    date:         a.date,
-  }));
-
-  const displayFeed = isLive ? feed.slice(0, 5) : fallbackFeed;
+  const feed = student?.activityFeed ?? [];
 
   return (
     <div className="card recent-activity-card" id="recent-activity">
@@ -90,25 +77,20 @@ export default function RecentActivity({ student, onViewAll }) {
         <div>
           <h3 className="card-title">🔔 Activity Feed</h3>
           <p className="card-subtitle">
-            {isLive ? 'Live updates from your platform activity' : 'Showing book activity — live feed connecting soon'}
+            Real-time updates from your platform activity
           </p>
         </div>
-        {!isLive && (
-          <span className="feed-status-dot" title="Waiting for live feed">⏳</span>
-        )}
-        {isLive && (
-          <span className="feed-live-badge">● LIVE</span>
-        )}
+        <span className="feed-live-badge">● LIVE</span>
       </div>
 
       <div className="feed-list">
-        {displayFeed.length === 0 ? (
+        {feed.length === 0 ? (
           <div className="feed-empty">
             <span className="feed-empty-icon">🌱</span>
             <p>No activity yet. Start exploring the platform!</p>
           </div>
         ) : (
-          displayFeed.map((item, i) => <FeedItem key={i} item={item} index={i} />)
+          feed.slice(0, 5).map((item, i) => <FeedItem key={i} item={item} index={i} />)
         )}
       </div>
 
