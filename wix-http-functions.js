@@ -178,7 +178,8 @@ async function createStudentActivity({
       activityKey:  activityKey  || '',
       description:  description  || '',
       metadata:     metadata ? JSON.stringify(metadata) : '',
-      createdAt:    new Date()
+      createdAt:    new Date(),
+      time:         new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
     };
     await wixData.insert('StudentActivities', entry, { suppressAuth: true });
     console.log(`[StudentActivities] Logged: ${activityType} for ${studentId}`);
@@ -1001,16 +1002,22 @@ export async function get_studentActivities(request) {
         .find({ suppressAuth: true });
       const studentName = roleRes.items[0]?.fullName || roleRes.items[0]?.email || '';
 
-      // Query PHQuizResults using studentId, memberId, or _owner OR-query
-      const quizRes = await wixData.query('PHQuizResults')
-        .eq('studentId', studentId)
-        .or(wixData.query('PHQuizResults').eq('memberId', studentId))
-        .or(wixData.query('PHQuizResults').eq('_owner', studentId))
-        .descending('_createdDate')
-        .limit(100)
-        .find({ suppressAuth: true });
+      // Query PHQuizResults using studentId, memberId, or _owner in parallel (safest to avoid Velo OR limitations)
+      const [res1, res2, res3] = await Promise.all([
+        wixData.query('PHQuizResults').eq('studentId', studentId).find({ suppressAuth: true }).catch(() => ({ items: [] })),
+        wixData.query('PHQuizResults').eq('memberId', studentId).find({ suppressAuth: true }).catch(() => ({ items: [] })),
+        wixData.query('PHQuizResults').eq('_owner', studentId).find({ suppressAuth: true }).catch(() => ({ items: [] }))
+      ]);
 
-      for (const result of quizRes.items || []) {
+      const quizItemsMap = new Map();
+      [...(res1.items || []), ...(res2.items || []), ...(res3.items || [])].forEach(item => {
+        if (item && item._id) {
+          quizItemsMap.set(item._id, item);
+        }
+      });
+      const quizResItems = Array.from(quizItemsMap.values());
+
+      for (const result of quizResItems) {
         if (knownKeys.has(result._id)) continue; // already mirrored
 
         const rawType   = (result.testType || result.type || '').toLowerCase();
