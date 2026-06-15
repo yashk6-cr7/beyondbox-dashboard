@@ -123,13 +123,15 @@ function normalizeApiData(apiData, memberId) {
     .sort((a, b) => new Date(b.completedAt) - new Date(a.completedAt))
     .slice(0, 5)
     .map((a) => ({
+      id:           a.id           || a._id,
       title:        a.title        || 'Untitled Activity',
       book:         a.title        || '',
       activityType: a.activityType || '',
       type:         a.type         || 'books',
-      date:  a.completedAt
-        ? new Date(a.completedAt).toLocaleDateString('en-GB', { day:'2-digit', month:'short', year:'numeric' })
-        : '',
+      description:  a.description  || '',
+      completedAt:  a.completedAt  || null,
+      date:         a.date         || '',
+      time:         a.time         || '',
       icon: getActivityIcon(a.activityType, a.type),
     }));
 

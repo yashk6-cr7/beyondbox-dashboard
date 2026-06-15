@@ -57,11 +57,13 @@ function FeedItem({ item, index }) {
       <div className="feed-content">
         <div className="feed-header">
           <span className="feed-title">{item.title}</span>
-          <span className="feed-type-tag" style={{ background: meta.bg, color: meta.color }}>
-            {meta.label}
-          </span>
+          {meta.label !== 'Book Score' && (
+            <span className="feed-type-tag" style={{ background: meta.bg, color: meta.color }}>
+              {meta.label}
+            </span>
+          )}
         </div>
-        {item.detail && <p className="feed-detail">{item.detail}</p>}
+        {item.detail && item.detail !== item.title && <p className="feed-detail">{item.detail}</p>}
         <span className="feed-time">{date}{time ? ` · ${time}` : ''}</span>
       </div>
     </div>
@@ -121,7 +123,7 @@ export default function RecentActivity({ student, onViewAll }) {
             <p>No activity yet. Start exploring the platform!</p>
           </div>
         ) : (
-          dedupedFeed.slice(0, 5).map((item, i) => <FeedItem key={item.id || `feed-${i}`} item={item} index={i} />)
+          dedupedFeed.slice(0, 4).map((item, i) => <FeedItem key={item.id || `feed-${i}`} item={item} index={i} />)
         )}
       </div>
 
