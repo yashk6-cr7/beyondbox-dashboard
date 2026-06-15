@@ -158,6 +158,7 @@ function normalizeApiData(apiData, memberId) {
     teacherNote:      apiData.teacherNote || '',
     books,
     recentActivities: recent,
+    loggedAchievements: apiData.loggedAchievements || [],
     skillAverages,
     concepts:         conc,
     stats,
@@ -285,6 +286,30 @@ export function useStudentData() {
           try {
             const BADGE_LOG_KEY = `beyondbox_logged_badges_${memberId}`;
             const LEVEL_LOG_KEY = `beyondbox_logged_level_${memberId}`;
+
+            // — Sync client localStorage cache with database state —
+            const loggedKeys = normalizedData.loggedAchievements || [];
+            const dbBadges = loggedKeys.filter(id => !id.startsWith('level-'));
+            const dbLevels = loggedKeys
+              .filter(id => id.startsWith('level-'))
+              .map(id => parseInt(id.replace('level-', ''), 10))
+              .filter(Boolean);
+            const maxDbLevel = dbLevels.length > 0 ? Math.max(...dbLevels) : 0;
+
+            // Initialize localStorage with DB values if empty or out of sync
+            let currentLocalBadges = [];
+            try {
+              const localStored = localStorage.getItem(BADGE_LOG_KEY);
+              if (localStored) currentLocalBadges = JSON.parse(localStored);
+            } catch (_) {}
+            
+            // Merge DB badges with any locally logged badges
+            const mergedBadges = Array.from(new Set([...dbBadges, ...currentLocalBadges]));
+            localStorage.setItem(BADGE_LOG_KEY, JSON.stringify(mergedBadges));
+
+            const localLevel = parseInt(localStorage.getItem(LEVEL_LOG_KEY) || '0', 10) || 0;
+            const mergedLevel = Math.max(maxDbLevel, localLevel);
+            localStorage.setItem(LEVEL_LOG_KEY, String(mergedLevel));
 
             // — Badges —
             const unlockedBadges = (normalizedData.badges || []).filter(b => b.unlocked);

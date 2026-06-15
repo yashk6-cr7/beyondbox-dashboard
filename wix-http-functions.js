@@ -242,6 +242,14 @@ export async function get_studentDashboard(request) {
       .limit(5)
       .find({ suppressAuth: true });
 
+    // GET LOGGED ACHIEVEMENTS (to sync frontend localStorage and prevent badge double-trigger)
+    const achievementsResult = await wixData.query('StudentActivities')
+      .eq('studentId', studentId)
+      .eq('source', 'achievement')
+      .limit(1000)
+      .find({ suppressAuth: true });
+    const loggedAchievements = (achievementsResult.items || []).map(item => item.activityKey);
+
     // GET PHOTO — supports both base64 strings and wix:image:// URLs
     const photoResult = await wixData.query('StudentPhotos')
       .eq('studentId', studentId)
@@ -368,6 +376,7 @@ export async function get_studentDashboard(request) {
           }));
         })(),
         teacherNote: student.tutorComment || '',
+        loggedAchievements: loggedAchievements || [],
         stats: {
           totalCompleted: booksCompleted,
           booksCompleted,
@@ -974,10 +983,7 @@ export async function get_studentActivities(request) {
 
   // ── NON-BLOCKING: Mirror PHQuizResults → StudentActivities ─────────────────
   // PHQuizResults is the source of truth for pre-test / post-test results.
-  // This block runs in the background (fire-and-forget IIFE) so the endpoint returns instantly.
-  // It reads PHQuizResults for this student, checks which ones are already
-  // mirrored in StudentActivities (by activityKey = result._id), and creates
-  // lightweight timeline entries for any new ones.
+  // We query using studentId, memberId, or _owner to cover all schema variations.
   (async () => {
     try {
       // Get already-mirrored simulation keys for this student
@@ -995,9 +1001,11 @@ export async function get_studentActivities(request) {
         .find({ suppressAuth: true });
       const studentName = roleRes.items[0]?.fullName || roleRes.items[0]?.email || '';
 
-      // Query PHQuizResults using studentId field
+      // Query PHQuizResults using studentId, memberId, or _owner OR-query
       const quizRes = await wixData.query('PHQuizResults')
         .eq('studentId', studentId)
+        .or(wixData.query('PHQuizResults').eq('memberId', studentId))
+        .or(wixData.query('PHQuizResults').eq('_owner', studentId))
         .descending('_createdDate')
         .limit(100)
         .find({ suppressAuth: true });
@@ -1005,14 +1013,16 @@ export async function get_studentActivities(request) {
       for (const result of quizRes.items || []) {
         if (knownKeys.has(result._id)) continue; // already mirrored
 
-        const testType  = (result.testType || '').toLowerCase();
-        const isPreTest = testType === 'pre';
+        const rawType   = (result.testType || result.type || '').toLowerCase();
+        const rawTitle  = (result.title || result.simulationTitle || result.bookName || 'Simulation').toLowerCase();
+        const isPreTest = rawType === 'pre' || rawTitle.includes('pre-test') || rawTitle.includes('pretest') || rawTitle.includes('pre test');
+
         const activityType = isPreTest
           ? 'simulation_pretest_completed'
           : 'simulation_posttest_completed';
         const emoji = isPreTest ? '📋' : '✅';
         const label = isPreTest ? 'Pre-Test' : 'Post-Test';
-        const simTitle = result.title || 'Simulation';
+        const simTitle = result.title || result.simulationTitle || result.bookName || 'Simulation';
         const scoreText = result.percentage != null
           ? `${result.percentage}%`
           : (result.score != null ? String(result.score) : '');
@@ -1026,7 +1036,7 @@ export async function get_studentActivities(request) {
           title:        `${emoji} Completed ${simTitle} ${label}`,
           description:  scoreText ? `Score: ${scoreText}` : '',
           metadata:     {
-            testType:   result.testType,
+            testType:   result.testType || rawType,
             score:      result.score,
             percentage: result.percentage,
             testOrder:  result.testOrder
@@ -1040,6 +1050,60 @@ export async function get_studentActivities(request) {
       console.log(`[StudentActivities] PHQuizResults mirror complete for ${studentId}`);
     } catch (quizErr) {
       console.warn('[StudentActivities] PHQuizResults mirror error (non-fatal):', quizErr.message);
+    }
+  })();
+
+  // ── NON-BLOCKING: Mirror BookScores → StudentActivities ─────────────────────
+  // BookScores is the source of truth for completed books.
+  // This mirrors any book scores that are not yet in the timeline.
+  (async () => {
+    try {
+      // Get already-mirrored book keys for this student
+      const existingBookKeys = await wixData.query('StudentActivities')
+        .eq('studentId', studentId)
+        .eq('source', 'books')
+        .limit(1000)
+        .find({ suppressAuth: true });
+      const knownKeys = new Set((existingBookKeys.items || []).map(e => e.activityKey));
+
+      // Get student name
+      const roleRes = await wixData.query('UserRoles')
+        .eq('memberId', studentId)
+        .limit(1)
+        .find({ suppressAuth: true });
+      const studentName = roleRes.items[0]?.fullName || roleRes.items[0]?.email || '';
+
+      // Query BookScores
+      const bookRes = await wixData.query('BookScores')
+        .eq('studentId', studentId)
+        .descending('_createdDate')
+        .limit(100)
+        .find({ suppressAuth: true });
+
+      for (const score of bookRes.items || []) {
+        if (knownKeys.has(score.bookKey)) continue; // already mirrored
+
+        const bookTitle = score.bookName || score.bookKey || 'Book';
+        const avgScore  = score.averageScore != null ? score.averageScore : '';
+
+        await createStudentActivity({
+          studentId,
+          studentName,
+          source:       'books',
+          activityType: 'book_completed',
+          activityKey:  score.bookKey,         // unique book identifier
+          title:        `Completed ${bookTitle}`,
+          description:  avgScore !== '' ? `Average score: ${avgScore}` : '',
+          metadata:     { bookId: score.bookKey, bookName: bookTitle, averageScore: avgScore }
+        });
+
+        // Track so we don't re-create within this loop iteration
+        knownKeys.add(score.bookKey);
+      }
+
+      console.log(`[StudentActivities] BookScores mirror complete for ${studentId}`);
+    } catch (bookErr) {
+      console.warn('[StudentActivities] BookScores mirror error (non-fatal):', bookErr.message);
     }
   })();
 
