@@ -69,7 +69,34 @@ function FeedItem({ item, index }) {
 }
 
 export default function RecentActivity({ student, onViewAll }) {
-  const feed = student?.activityFeed ?? [];
+  // activityFeed = live feed from /studentActivities (loaded async after dashboard)
+  // recentActivities = fast fallback from /studentDashboard (available immediately)
+  // Prefer activityFeed if populated; fall back to recentActivities; then empty
+  const liveFeed     = student?.activityFeed;
+  const fallbackFeed = (student?.recentActivities || []).map(a => ({
+    id:           a.id,
+    type:         a.type         || 'books',
+    activityType: a.activityType || '',
+    icon:         a.icon         || '📘',
+    title:        a.title        || 'Activity',
+    detail:       a.description  || '',
+    timestamp:    a.completedAt  || a.date || null,
+    date:         a.date         || '',
+  }));
+  const feed = (liveFeed && liveFeed.length > 0) ? liveFeed : fallbackFeed;
+
+  // Client-side dedup safety net: if the CMS has old duplicate entries (same activityKey),
+  // only show the most recent one. Items with no activityKey are always shown.
+  const seenKeys = new Set();
+  const dedupedFeed = feed.filter(item => {
+    const key = item.activityKey || item.id;
+    if (!key) return true; // no key → always show
+    if (seenKeys.has(key)) return false;
+    seenKeys.add(key);
+    return true;
+  });
+
+  const isLive = !!(liveFeed && liveFeed.length > 0);
 
   return (
     <div className="card recent-activity-card" id="recent-activity">
@@ -80,17 +107,19 @@ export default function RecentActivity({ student, onViewAll }) {
             Real-time updates from your platform activity
           </p>
         </div>
-        <span className="feed-live-badge">● LIVE</span>
+        <span className="feed-live-badge" style={isLive ? {} : { opacity: 0.6 }}>
+          {isLive ? '● LIVE' : '○ Syncing…'}
+        </span>
       </div>
 
       <div className="feed-list">
-        {feed.length === 0 ? (
+        {dedupedFeed.length === 0 ? (
           <div className="feed-empty">
             <span className="feed-empty-icon">🌱</span>
             <p>No activity yet. Start exploring the platform!</p>
           </div>
         ) : (
-          feed.slice(0, 5).map((item, i) => <FeedItem key={i} item={item} index={i} />)
+          dedupedFeed.slice(0, 5).map((item, i) => <FeedItem key={item.id || `feed-${i}`} item={item} index={i} />)
         )}
       </div>
 

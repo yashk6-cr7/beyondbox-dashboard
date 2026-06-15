@@ -982,139 +982,129 @@ export async function get_studentActivities(request) {
     return badRequest({ headers: CORS_HEADERS, body: JSON.stringify({ error: 'Missing studentId' }) });
   }
 
-  // ── NON-BLOCKING: Mirror PHQuizResults → StudentActivities ─────────────────
-  // PHQuizResults is the source of truth for pre-test / post-test results.
-  // We query using studentId, memberId, or _owner to cover all schema variations.
-  (async () => {
-    try {
-      // Get already-mirrored simulation keys for this student
-      const existingSimKeys = await wixData.query('StudentActivities')
-        .eq('studentId', studentId)
-        .eq('source', 'simulation')
-        .limit(1000)
-        .find({ suppressAuth: true });
-      const knownKeys = new Set((existingSimKeys.items || []).map(e => e.activityKey));
-
-      // Get student name
-      const roleRes = await wixData.query('UserRoles')
-        .eq('memberId', studentId)
-        .limit(1)
-        .find({ suppressAuth: true });
-      const studentName = roleRes.items[0]?.fullName || roleRes.items[0]?.email || '';
-
-      // Query PHQuizResults using studentId, memberId, or _owner in parallel (safest to avoid Velo OR limitations)
-      const [res1, res2, res3] = await Promise.all([
-        wixData.query('PHQuizResults').eq('studentId', studentId).find({ suppressAuth: true }).catch(() => ({ items: [] })),
-        wixData.query('PHQuizResults').eq('memberId', studentId).find({ suppressAuth: true }).catch(() => ({ items: [] })),
-        wixData.query('PHQuizResults').eq('_owner', studentId).find({ suppressAuth: true }).catch(() => ({ items: [] }))
-      ]);
-
-      const quizItemsMap = new Map();
-      [...(res1.items || []), ...(res2.items || []), ...(res3.items || [])].forEach(item => {
-        if (item && item._id) {
-          quizItemsMap.set(item._id, item);
-        }
-      });
-      const quizResItems = Array.from(quizItemsMap.values());
-
-      for (const result of quizResItems) {
-        if (knownKeys.has(result._id)) continue; // already mirrored
-
-        const rawType   = (result.testType || result.type || '').toLowerCase();
-        const rawTitle  = (result.title || result.simulationTitle || result.bookName || 'Simulation').toLowerCase();
-        const isPreTest = rawType === 'pre' || rawTitle.includes('pre-test') || rawTitle.includes('pretest') || rawTitle.includes('pre test');
-
-        const activityType = isPreTest
-          ? 'simulation_pretest_completed'
-          : 'simulation_posttest_completed';
-        const emoji = isPreTest ? '📋' : '✅';
-        const label = isPreTest ? 'Pre-Test' : 'Post-Test';
-        const simTitle = result.title || result.simulationTitle || result.bookName || 'Simulation';
-        const scoreText = result.percentage != null
-          ? `${result.percentage}%`
-          : (result.score != null ? String(result.score) : '');
-
-        await createStudentActivity({
-          studentId,
-          studentName,
-          source:       'simulation',
-          activityType,
-          activityKey:  result._id,         // unique PHQuizResults row ID
-          title:        `${emoji} Completed ${simTitle} ${label}`,
-          description:  scoreText ? `Score: ${scoreText}` : '',
-          metadata:     {
-            testType:   result.testType || rawType,
-            score:      result.score,
-            percentage: result.percentage,
-            testOrder:  result.testOrder
-          }
-        });
-
-        // Track so we don't re-create within this loop iteration
-        knownKeys.add(result._id);
-      }
-
-      console.log(`[StudentActivities] PHQuizResults mirror complete for ${studentId}`);
-    } catch (quizErr) {
-      console.warn('[StudentActivities] PHQuizResults mirror error (non-fatal):', quizErr.message);
-    }
-  })();
-
-  // ── NON-BLOCKING: Mirror BookScores → StudentActivities ─────────────────────
-  // BookScores is the source of truth for completed books.
-  // This mirrors any book scores that are not yet in the timeline.
-  (async () => {
-    try {
-      // Get already-mirrored book keys for this student
-      const existingBookKeys = await wixData.query('StudentActivities')
-        .eq('studentId', studentId)
-        .eq('source', 'books')
-        .limit(1000)
-        .find({ suppressAuth: true });
-      const knownKeys = new Set((existingBookKeys.items || []).map(e => e.activityKey));
-
-      // Get student name
-      const roleRes = await wixData.query('UserRoles')
-        .eq('memberId', studentId)
-        .limit(1)
-        .find({ suppressAuth: true });
-      const studentName = roleRes.items[0]?.fullName || roleRes.items[0]?.email || '';
-
-      // Query BookScores
-      const bookRes = await wixData.query('BookScores')
-        .eq('studentId', studentId)
-        .descending('_createdDate')
-        .limit(100)
-        .find({ suppressAuth: true });
-
-      for (const score of bookRes.items || []) {
-        if (knownKeys.has(score.bookKey)) continue; // already mirrored
-
-        const bookTitle = score.bookName || score.bookKey || 'Book';
-        const avgScore  = score.averageScore != null ? score.averageScore : '';
-
-        await createStudentActivity({
-          studentId,
-          studentName,
-          source:       'books',
-          activityType: 'book_completed',
-          activityKey:  score.bookKey,         // unique book identifier
-          title:        `Completed ${bookTitle}`,
-          description:  avgScore !== '' ? `Average score: ${avgScore}` : '',
-          metadata:     { bookId: score.bookKey, bookName: bookTitle, averageScore: avgScore }
-        });
-
-        // Track so we don't re-create within this loop iteration
-        knownKeys.add(score.bookKey);
-      }
-
-      console.log(`[StudentActivities] BookScores mirror complete for ${studentId}`);
-    } catch (bookErr) {
-      console.warn('[StudentActivities] BookScores mirror error (non-fatal):', bookErr.message);
-    }
-  })();
-
   try {
+    // ── Fetch shared data: UserRoles (used by both mirrors) ──────────────────
+    const roleRes = await wixData.query('UserRoles')
+      .eq('memberId', studentId)
+      .limit(1)
+      .find({ suppressAuth: true });
+    const studentName = roleRes.items[0]?.fullName || roleRes.items[0]?.email || '';
+    const email       = roleRes.items[0]?.email || '';
+
+    // ── Run BOTH mirrors in parallel and AWAIT them ──────────────────────────
+    // Using Promise.allSettled so a failure in one doesn't block the other.
+    await Promise.allSettled([
+
+      // ── Mirror 1: PHQuizResults → StudentActivities (pre/post tests) ────────
+      (async () => {
+        try {
+          // Get already-mirrored simulation keys for this student
+          const existingSimKeys = await wixData.query('StudentActivities')
+            .eq('studentId', studentId)
+            .eq('source', 'simulation')
+            .limit(1000)
+            .find({ suppressAuth: true });
+          const knownKeys = new Set((existingSimKeys.items || []).map(e => e.activityKey));
+
+          // Query PHQuizResults using studentId, memberId, _owner, or email in parallel
+          const [res1, res2, res3, res4] = await Promise.all([
+            wixData.query('PHQuizResults').eq('studentId', studentId).descending('_createdDate').find({ suppressAuth: true }).catch(() => ({ items: [] })),
+            wixData.query('PHQuizResults').eq('memberId', studentId).descending('_createdDate').find({ suppressAuth: true }).catch(() => ({ items: [] })),
+            wixData.query('PHQuizResults').eq('_owner', studentId).descending('_createdDate').find({ suppressAuth: true }).catch(() => ({ items: [] })),
+            email ? wixData.query('PHQuizResults').eq('email', email).descending('_createdDate').find({ suppressAuth: true }).catch(() => ({ items: [] })) : Promise.resolve({ items: [] })
+          ]);
+
+          // Deduplicate across all four queries (same item may appear in multiple)
+          const quizItemsMap = new Map();
+          [...(res1.items || []), ...(res2.items || []), ...(res3.items || []), ...(res4.items || [])].forEach(item => {
+            if (item && item._id) quizItemsMap.set(item._id, item);
+          });
+
+          for (const result of quizItemsMap.values()) {
+            if (knownKeys.has(result._id)) continue; // already mirrored
+
+            const rawType   = (result.testType || result.type || '').toLowerCase();
+            const rawTitle  = (result.title || result.simulationTitle || result.bookName || 'Simulation').toLowerCase();
+            const isPreTest = rawType === 'pre' || rawTitle.includes('pre-test') || rawTitle.includes('pretest') || rawTitle.includes('pre test');
+
+            const activityType = isPreTest ? 'simulation_pretest_completed' : 'simulation_posttest_completed';
+            const emoji        = isPreTest ? '📋' : '✅';
+            const label        = isPreTest ? 'Pre-Test' : 'Post-Test';
+            const simTitle     = result.title || result.simulationTitle || result.bookName || 'Simulation';
+            const scoreText    = result.percentage != null
+              ? `${result.percentage}%`
+              : (result.score != null ? String(result.score) : '');
+
+            await createStudentActivity({
+              studentId,
+              studentName,
+              source:       'simulation',
+              activityType,
+              activityKey:  result._id,
+              title:        `${emoji} Completed ${simTitle} ${label}`,
+              description:  scoreText ? `Score: ${scoreText}` : '',
+              metadata:     {
+                testType:   result.testType || rawType,
+                score:      result.score,
+                percentage: result.percentage,
+                testOrder:  result.testOrder
+              }
+            });
+
+            knownKeys.add(result._id);
+          }
+
+          console.log(`[StudentActivities] PHQuizResults mirror complete for ${studentId}: ${quizItemsMap.size} total, added ${[...quizItemsMap.values()].filter(r => !knownKeys.has(r._id)).length} new`);
+        } catch (quizErr) {
+          console.warn('[StudentActivities] PHQuizResults mirror error:', quizErr.message);
+        }
+      })(),
+
+      // ── Mirror 2: BookScores → StudentActivities (completed books) ──────────
+      (async () => {
+        try {
+          const existingBookKeys = await wixData.query('StudentActivities')
+            .eq('studentId', studentId)
+            .eq('source', 'books')
+            .limit(1000)
+            .find({ suppressAuth: true });
+          const knownKeys = new Set((existingBookKeys.items || []).map(e => e.activityKey));
+
+          const bookRes = await wixData.query('BookScores')
+            .eq('studentId', studentId)
+            .descending('_createdDate')
+            .limit(100)
+            .find({ suppressAuth: true });
+
+          for (const score of bookRes.items || []) {
+            if (knownKeys.has(score.bookKey)) continue;
+
+            const bookTitle = score.bookName || score.bookKey || 'Book';
+            const avgScore  = score.averageScore != null ? score.averageScore : '';
+
+            await createStudentActivity({
+              studentId,
+              studentName,
+              source:       'books',
+              activityType: 'book_completed',
+              activityKey:  score.bookKey,
+              title:        `📚 Completed ${bookTitle}`,
+              description:  avgScore !== '' ? `Average score: ${avgScore}` : '',
+              metadata:     { bookId: score.bookKey, bookName: bookTitle, averageScore: avgScore }
+            });
+
+            knownKeys.add(score.bookKey);
+          }
+
+          console.log(`[StudentActivities] BookScores mirror complete for ${studentId}`);
+        } catch (bookErr) {
+          console.warn('[StudentActivities] BookScores mirror error:', bookErr.message);
+        }
+      })()
+
+    ]); // ← both mirrors are now AWAITED before the query below runs
+
+    // ── Query StudentActivities — mirrors are complete so data is ready ───────
     const maxItems = Math.min(parseInt(limit || '10', 10), 50);
 
     const result = await wixData.query('StudentActivities')
@@ -1132,15 +1122,12 @@ export async function get_studentActivities(request) {
       activityType: item.activityType || '',
       activityKey:  item.activityKey  || '',
       description:  item.description  || '',
-      metadata:     (() => {
+      metadata: (() => {
         if (!item.metadata) return null;
-        try {
-          return typeof item.metadata === 'string' ? JSON.parse(item.metadata) : item.metadata;
-        } catch (e) {
-          return item.metadata;
-        }
+        try { return typeof item.metadata === 'string' ? JSON.parse(item.metadata) : item.metadata; }
+        catch (e) { return item.metadata; }
       })(),
-      createdAt:    item.createdAt    || item._createdDate,
+      createdAt: item._createdDate || item.createdAt,
     }));
 
     return ok({
@@ -1196,8 +1183,8 @@ export async function post_logStudentActivity(request) {
       });
     }
 
-    // Deduplicate achievement events (badges and xp level-up) to prevent double logging in backend
-    if (activityKey && (activityType === 'badge_unlocked' || activityType === 'xp_level_up')) {
+    // Deduplicate any event that has an activityKey to prevent duplicate timeline entries
+    if (activityKey) {
       const existing = await wixData.query('StudentActivities')
         .eq('studentId', studentId)
         .eq('activityType', activityType)
@@ -1462,3 +1449,35 @@ export async function post_saveHomeLearnerRemarks(request) {
 export function options_saveHomeLearnerRemarks(request) {
   return ok({ headers: CORS_HEADERS, body: '' });
 }
+
+// ─────────────────────────────────────────────────────────────
+// DEBUG ENDPOINT — REMOVE LATER
+// ─────────────────────────────────────────────────────────────
+export async function get_debugPH(request) {
+  try {
+    const studentId = request.query.studentId;
+    if (!studentId) {
+      return badRequest({ headers: CORS_HEADERS, body: JSON.stringify({ error: 'Missing studentId' }) });
+    }
+    const [res1, res2, res3, res4] = await Promise.all([
+      wixData.query('PHQuizResults').eq('studentId', studentId).find({ suppressAuth: true }).catch(() => ({ items: [] })),
+      wixData.query('PHQuizResults').eq('memberId', studentId).find({ suppressAuth: true }).catch(() => ({ items: [] })),
+      wixData.query('PHQuizResults').eq('_owner', studentId).find({ suppressAuth: true }).catch(() => ({ items: [] })),
+      wixData.query('PHQuizResults').eq('email', studentId).find({ suppressAuth: true }).catch(() => ({ items: [] }))
+    ]);
+    const quizItemsMap = new Map();
+    [...(res1.items || []), ...(res2.items || []), ...(res3.items || []), ...(res4.items || [])].forEach(item => {
+      if (item && item._id) {
+        quizItemsMap.set(item._id, item);
+      }
+    });
+    return ok({ headers: CORS_HEADERS, body: JSON.stringify(Array.from(quizItemsMap.values())) });
+  } catch (err) {
+    return serverError({ headers: CORS_HEADERS, body: JSON.stringify({ error: err.message }) });
+  }
+}
+
+export function options_debugPH(request) {
+  return ok({ headers: CORS_HEADERS, body: '' });
+}
+
