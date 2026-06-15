@@ -971,6 +971,77 @@ export async function get_studentActivities(request) {
     return badRequest({ headers: CORS_HEADERS, body: JSON.stringify({ error: 'Missing studentId' }) });
   }
 
+  // ── NON-BLOCKING: Mirror PHQuizResults → StudentActivities ─────────────────
+  // PHQuizResults is the source of truth for pre-test / post-test results.
+  // This block runs in the background (fire-and-forget IIFE) so the endpoint returns instantly.
+  // It reads PHQuizResults for this student, checks which ones are already
+  // mirrored in StudentActivities (by activityKey = result._id), and creates
+  // lightweight timeline entries for any new ones.
+  (async () => {
+    try {
+      // Get already-mirrored simulation keys for this student
+      const existingSimKeys = await wixData.query('StudentActivities')
+        .eq('studentId', studentId)
+        .eq('source', 'simulation')
+        .limit(1000)
+        .find({ suppressAuth: true });
+      const knownKeys = new Set((existingSimKeys.items || []).map(e => e.activityKey));
+
+      // Get student name
+      const roleRes = await wixData.query('UserRoles')
+        .eq('memberId', studentId)
+        .limit(1)
+        .find({ suppressAuth: true });
+      const studentName = roleRes.items[0]?.fullName || roleRes.items[0]?.email || '';
+
+      // Query PHQuizResults using studentId field
+      const quizRes = await wixData.query('PHQuizResults')
+        .eq('studentId', studentId)
+        .descending('createdDate')
+        .limit(100)
+        .find({ suppressAuth: true });
+
+      for (const result of quizRes.items || []) {
+        if (knownKeys.has(result._id)) continue; // already mirrored
+
+        const testType  = (result.testType || '').toLowerCase();
+        const isPreTest = testType === 'pre';
+        const activityType = isPreTest
+          ? 'simulation_pretest_completed'
+          : 'simulation_posttest_completed';
+        const emoji = isPreTest ? '📋' : '✅';
+        const label = isPreTest ? 'Pre-Test' : 'Post-Test';
+        const simTitle = result.title || 'Simulation';
+        const scoreText = result.percentage != null
+          ? `${result.percentage}%`
+          : (result.score != null ? String(result.score) : '');
+
+        await createStudentActivity({
+          studentId,
+          studentName,
+          source:       'simulation',
+          activityType,
+          activityKey:  result._id,         // unique PHQuizResults row ID
+          title:        `${emoji} Completed ${simTitle} ${label}`,
+          description:  scoreText ? `Score: ${scoreText}` : '',
+          metadata:     {
+            testType:   result.testType,
+            score:      result.score,
+            percentage: result.percentage,
+            testOrder:  result.testOrder
+          }
+        });
+
+        // Track so we don't re-create within this loop iteration
+        knownKeys.add(result._id);
+      }
+
+      console.log(`[StudentActivities] PHQuizResults mirror complete for ${studentId}`);
+    } catch (quizErr) {
+      console.warn('[StudentActivities] PHQuizResults mirror error (non-fatal):', quizErr.message);
+    }
+  })();
+
   try {
     const maxItems = Math.min(parseInt(limit || '10', 10), 50);
 
@@ -1044,6 +1115,23 @@ export async function post_logStudentActivity(request) {
         headers: CORS_HEADERS,
         body: JSON.stringify({ error: `Invalid source. Must be one of: ${validSources.join(', ')}` })
       });
+    }
+
+    // Deduplicate achievement events (badges and xp level-up) to prevent double logging in backend
+    if (activityKey && (activityType === 'badge_unlocked' || activityType === 'xp_level_up')) {
+      const existing = await wixData.query('StudentActivities')
+        .eq('studentId', studentId)
+        .eq('activityType', activityType)
+        .eq('activityKey', activityKey)
+        .limit(1)
+        .find({ suppressAuth: true });
+
+      if (existing.items.length > 0) {
+        return ok({
+          headers: CORS_HEADERS,
+          body: JSON.stringify({ success: true, message: 'Activity already logged (deduplicated)' })
+        });
+      }
     }
 
     await createStudentActivity({

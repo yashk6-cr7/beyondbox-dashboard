@@ -270,8 +270,88 @@ export function useStudentData() {
 
         console.log('[BeyondBox] API response:', json);
         if (!cancelled) {
-          setData(normalizeApiData(json, memberId));
+          // Capture normalized data so we can use it for badge logging below
+          const normalizedData = normalizeApiData(json, memberId);
+          setData(normalizedData);
           setError(null);
+
+          // ── BADGE + XP LEVEL-UP: Log once per student per device ────────────────
+          // Strategy:
+          //   1. Read localStorage to find already-logged badge/level IDs.
+          //   2. Find newly unlocked items not yet in that list.
+          //   3. Call backend logStudentActivity for each new one.
+          //   4. Backend ALSO deduplicates by (studentId + activityKey + activityType)
+          //      so if localStorage is ever cleared, no duplicates appear in CMS.
+          try {
+            const BADGE_LOG_KEY = `beyondbox_logged_badges_${memberId}`;
+            const LEVEL_LOG_KEY = `beyondbox_logged_level_${memberId}`;
+
+            // — Badges —
+            const unlockedBadges = (normalizedData.badges || []).filter(b => b.unlocked);
+            if (unlockedBadges.length > 0) {
+              const alreadyLogged = JSON.parse(localStorage.getItem(BADGE_LOG_KEY) || '[]');
+              const newBadges = unlockedBadges.filter(b => !alreadyLogged.includes(b.id));
+
+              if (newBadges.length > 0) {
+                // Update localStorage FIRST to prevent re-logging on rapid page reloads
+                localStorage.setItem(BADGE_LOG_KEY,
+                  JSON.stringify([...alreadyLogged, ...newBadges.map(b => b.id)])
+                );
+
+                // Log each new badge non-blocking
+                for (const badge of newBadges) {
+                  fetch(`${WIX_BASE}/logStudentActivity`, {
+                    method:  'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      studentId:    memberId,
+                      studentName:  normalizedData.name,
+                      source:       'achievement',
+                      activityType: 'badge_unlocked',
+                      activityKey:  badge.id,          // ← dedup key in backend
+                      title:        `${badge.emoji} Unlocked ${badge.title}`,
+                      description:  badge.desc || '',
+                      metadata:     { badgeId: badge.id, category: badge.category }
+                    })
+                  }).catch(() => {}); // fully non-fatal
+                }
+
+                console.log(`[BeyondBox] Logged ${newBadges.length} new badge(s) to StudentActivities`);
+              }
+            }
+
+            // — XP Level Up —
+            const currentLevel = normalizedData.level || 1;
+            const lastLoggedLevel = parseInt(localStorage.getItem(LEVEL_LOG_KEY) || '0', 10);
+
+            if (currentLevel > 1 && currentLevel > lastLoggedLevel) {
+              // Update localStorage first
+              localStorage.setItem(LEVEL_LOG_KEY, String(currentLevel));
+
+              // Log each new level (handles multi-level jumps)
+              for (let lvl = Math.max(lastLoggedLevel + 1, 2); lvl <= currentLevel; lvl++) {
+                const levelName = LEVEL_NAMES[Math.min(lvl, LEVEL_NAMES.length - 1)] || `Level ${lvl}`;
+                fetch(`${WIX_BASE}/logStudentActivity`, {
+                  method:  'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    studentId:    memberId,
+                    studentName:  normalizedData.name,
+                    source:       'achievement',
+                    activityType: 'xp_level_up',
+                    activityKey:  `level-${lvl}`,     // ← dedup key in backend
+                    title:        `🚀 Reached ${levelName}`,
+                    description:  `Now at Level ${lvl}`,
+                    metadata:     { level: lvl, xp: normalizedData.xp }
+                  })
+                }).catch(() => {});
+              }
+
+              console.log(`[BeyondBox] Logged XP level-up to ${currentLevel}`);
+            }
+          } catch (badgeLogErr) {
+            console.warn('[BeyondBox] Badge/level logging failed (non-fatal):', badgeLogErr.message);
+          }
         }
 
         // ── Non-blocking: fetch community feed separately ─────────
