@@ -17,12 +17,8 @@ export default function Sidebar({ student, activePage, setActivePage, isOpen, on
     if (item.action === 'internal') {
       setActivePage('activities'); onClose();
     } else if (item.key === 'skillTracker') {
-      // Safest method: Ask Wix Velo parent page to navigate
-      try {
-        window.parent.postMessage({ type: 'NAVIGATE_WIX', url: 'https://www.thebeyondbox.org/skill-tracker' }, '*');
-      } catch (e) {
-        console.error('Failed to postMessage:', e);
-      }
+      // Direct redirect using _top to escape the iframe and load in the same tab
+      window.open('https://www.thebeyondbox.org/skill-tracker', '_top');
       onClose();
     } else {
       if (item.url === '/') {
