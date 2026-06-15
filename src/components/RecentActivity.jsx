@@ -1,15 +1,44 @@
 import React from 'react';
 
+// ─── Activity type → display metadata ────────────────────────────────────────
+// Covers every activityType / source emitted by the StudentActivities CMS.
+// The `type` field on each feed item is set to `source` from the API
+// (books | simulation | community | achievement) OR to the specific
+// activityType string when richer classification is available.
 const ACTIVITY_META = {
-  book_score:  { color: '#6366f1', bg: '#eef2ff', label: 'Book Score'  },
-  simulation:  { color: '#10b981', bg: '#ecfdf5', label: 'Simulation'  },
-  purchase:    { color: '#f59e0b', bg: '#fffbeb', label: 'Purchase'     },
-  community:   { color: '#ec4899', bg: '#fdf2f8', label: 'Community'   },
-  default:     { color: '#8b5cf6', bg: '#f5f3ff', label: 'Activity'    },
+  // ── Source-level keys (from StudentActivities.source) ──────────────────────
+  books:                     { color: '#6366f1', bg: '#eef2ff', label: 'Book'        },
+  simulation:                { color: '#10b981', bg: '#ecfdf5', label: 'Simulation'  },
+  community:                 { color: '#ec4899', bg: '#fdf2f8', label: 'Community'   },
+  achievement:               { color: '#f59e0b', bg: '#fffbeb', label: 'Achievement' },
+
+  // ── Fine-grained activityType keys ─────────────────────────────────────────
+  book_completed:            { color: '#6366f1', bg: '#eef2ff', label: 'Book'        },
+
+  simulation_started:        { color: '#10b981', bg: '#ecfdf5', label: 'Simulation'  },
+  simulation_pretest_completed:  { color: '#0ea5e9', bg: '#e0f2fe', label: 'Pre-Test'   },
+  simulation_posttest_completed: { color: '#22c55e', bg: '#dcfce7', label: 'Post-Test'  },
+  simulation_completed:      { color: '#10b981', bg: '#ecfdf5', label: 'Simulation'  },
+
+  community_post:            { color: '#ec4899', bg: '#fdf2f8', label: 'Post'        },
+  community_comment:         { color: '#a855f7', bg: '#faf5ff', label: 'Comment'     },
+  community_reaction:        { color: '#f43f5e', bg: '#fff1f2', label: 'Reaction'    },
+  community_group_joined:    { color: '#8b5cf6', bg: '#f5f3ff', label: 'Group'       },
+
+  badge_unlocked:            { color: '#f59e0b', bg: '#fffbeb', label: 'Badge'       },
+  xp_level_up:               { color: '#f97316', bg: '#fff7ed', label: 'Level Up'    },
+
+  // ── Legacy / fallback ──────────────────────────────────────────────────────
+  book_score:                { color: '#6366f1', bg: '#eef2ff', label: 'Book Score'  },
+  default:                   { color: '#8b5cf6', bg: '#f5f3ff', label: 'Activity'    },
 };
 
 function FeedItem({ item, index }) {
-  const meta = ACTIVITY_META[item.type] || ACTIVITY_META.default;
+  // Resolve display meta: fine-grained activityType > source-level type > default
+  const meta = ACTIVITY_META[item.activityType]
+             || ACTIVITY_META[item.type]
+             || ACTIVITY_META.default;
+
   const date = item.timestamp
     ? new Date(item.timestamp).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })
     : item.date || '—';
@@ -43,13 +72,14 @@ export default function RecentActivity({ student, onViewAll }) {
   const feed   = student?.activityFeed ?? [];
   const isLive = feed.length > 0;
 
-  // Fallback: build basic feed from book activities if API feed not ready
+  // Fallback: build basic feed from recentActivities (book-derived) if activityFeed not ready
   const fallbackFeed = (student?.recentActivities ?? []).map(a => ({
-    type:   'book_score',
-    icon:   a.icon ?? '📘',
-    title:  a.title,
-    detail: a.book,
-    date:   a.date,
+    type:         a.type         || 'books',
+    activityType: a.activityType || 'book_completed',
+    icon:         a.icon         ?? '📚',
+    title:        a.title,
+    detail:       a.book         || '',
+    date:         a.date,
   }));
 
   const displayFeed = isLive ? feed.slice(0, 5) : fallbackFeed;

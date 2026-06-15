@@ -142,6 +142,53 @@ async function updateConceptProgress(studentId) {
 }
 
 // ─────────────────────────────────────────────────────────────
+// INTERNAL: Insert a lightweight entry into StudentActivities CMS
+//
+// This is the ONLY write path for the timeline engine.
+// All systems (books, simulation, community, achievements) call
+// this helper — StudentActivities itself NEVER calculates anything.
+//
+// Parameters:
+//   studentId    – Wix memberId
+//   studentName  – display name (string)
+//   source       – 'books' | 'simulation' | 'community' | 'achievement'
+//   activityType – e.g. 'book_completed', 'community_post', 'badge_unlocked'
+//   activityKey  – machine-readable identifier (e.g. 'marie-mysterious-rock')
+//   title        – human-readable timeline message
+//   description  – optional details string
+//   metadata     – optional plain object for future analytics
+// ─────────────────────────────────────────────────────────────
+async function createStudentActivity({
+  studentId,
+  studentName,
+  source,
+  activityType,
+  activityKey,
+  title,
+  description,
+  metadata
+}) {
+  try {
+    const entry = {
+      title:        title        || activityType,
+      studentId,
+      studentName:  studentName  || '',
+      source:       source       || 'unknown',
+      activityType: activityType || 'unknown',
+      activityKey:  activityKey  || '',
+      description:  description  || '',
+      metadata:     metadata ? JSON.stringify(metadata) : '',
+      createdAt:    new Date()
+    };
+    await wixData.insert('StudentActivities', entry, { suppressAuth: true });
+    console.log(`[StudentActivities] Logged: ${activityType} for ${studentId}`);
+  } catch (err) {
+    // Non-fatal — never block parent operations
+    console.error('[StudentActivities] createStudentActivity error:', err.message);
+  }
+}
+
+// ─────────────────────────────────────────────────────────────
 // GET USER ID
 // ─────────────────────────────────────────────────────────────
 export async function get_userid(request) {
@@ -185,6 +232,13 @@ export async function get_studentDashboard(request) {
     // GET CONCEPTS (pre-aggregated by updateConceptProgress)
     const conceptResult = await wixData.query('ConceptProgress')
       .eq('studentId', studentId)
+      .find({ suppressAuth: true });
+
+    // GET RECENT ACTIVITIES from StudentActivities CMS (the central timeline engine)
+    const activityResult = await wixData.query('StudentActivities')
+      .eq('studentId', studentId)
+      .descending('createdAt')
+      .limit(5)
       .find({ suppressAuth: true });
 
     // GET PHOTO — supports both base64 strings and wix:image:// URLs
@@ -288,20 +342,30 @@ export async function get_studentDashboard(request) {
           progressPercent: Number(item.progressPercent || 0),
           masteryLevel:    item.masteryLevel
         })),
-        recentActivities: [...books].reverse().map(item => ({
-          id:              item.bookKey || item._id,
-          title:           item.bookName || 'Untitled Book',
-          type:            'Book',
-          status:          'Completed',
-          score:           Number(item.averageScore    || 0),
-          completedAt:     item.updatedAt,
-          cognitive:       Number(item.cognitive       || 0),
-          creative:        Number(item.creative        || 0),
-          communication:   Number(item.communication   || 0),
-          socialEmotional: Number(item.socialEmotional || 0),
-          physical:        Number(item.physical        || 0),
-          practical:       Number(item.practical       || 0)
-        })),
+        // ── recentActivities: sourced from StudentActivities CMS (timeline engine) ──
+        // Falls back gracefully to book-derived list if StudentActivities is empty.
+        recentActivities: (() => {
+          const timelineItems = activityResult.items || [];
+          if (timelineItems.length > 0) {
+            return timelineItems.map(item => ({
+              id:           item._id,
+              title:        item.title        || 'Activity',
+              type:         item.source       || 'books',
+              activityType: item.activityType || '',
+              description:  item.description  || '',
+              completedAt:  item.createdAt    || item._createdDate,
+            }));
+          }
+          // Fallback: derive from books (backward compat)
+          return [...books].reverse().map(item => ({
+            id:          item.bookKey || item._id,
+            title:       item.bookName || 'Untitled Book',
+            type:        'books',
+            activityType:'book_completed',
+            description: '',
+            completedAt: item.updatedAt,
+          }));
+        })(),
         teacherNote: student.tutorComment || '',
         stats: {
           totalCompleted: booksCompleted,
@@ -802,6 +866,71 @@ export async function get_communityFeed(request) {
       );
     }).length;
 
+    // ── MIRROR CommunityActivity → StudentActivities timeline ──
+    // For each community event that doesn't already have a
+    // StudentActivities entry (keyed by activityKey = item._id),
+    // create a lightweight timeline summary.
+    // This runs non-blocking — never delays the community feed response.
+    (async () => {
+      try {
+        // Fetch existing StudentActivities keys for this student so we
+        // don't create duplicates on repeated communityFeed calls.
+        const existingKeys = await wixData.query('StudentActivities')
+          .eq('studentId', studentId)
+          .eq('source', 'community')
+          .limit(1000)
+          .find({ suppressAuth: true });
+        const knownKeys = new Set((existingKeys.items || []).map(e => e.activityKey));
+
+        // Fetch student name once
+        const roleRes = await wixData.query('UserRoles')
+          .eq('memberId', studentId)
+          .limit(1)
+          .find({ suppressAuth: true });
+        const studentName = roleRes.items[0]?.fullName || roleRes.items[0]?.email || '';
+
+        for (const item of items) {
+          if (knownKeys.has(item._id)) continue; // already logged
+
+          const at = normalise(item.activityType);
+          let activityType = '';
+          let title        = '';
+
+          if (at === 'post_created' || at === 'postcreated') {
+            activityType = 'community_post';
+            title        = `📝 Posted in ${item.groupName || 'Community'}`;
+          } else if (at === 'comment_created' || at === 'commentcreated') {
+            activityType = 'community_comment';
+            title        = `💬 Commented in ${item.groupName || 'Community'}`;
+          } else if (at === 'post_reaction' || at === 'postreaction') {
+            activityType = 'community_reaction';
+            title        = '❤️ Reacted to a post';
+          } else if (at === 'comment_reaction' || at === 'commentreaction') {
+            activityType = 'community_reaction';
+            title        = '❤️ Reacted to a comment';
+          } else if (at.includes('join') || at.startsWith('group')) {
+            activityType = 'community_group_joined';
+            title        = `👥 Joined ${item.groupName || 'a group'}`;
+          } else {
+            continue; // skip unknown types
+          }
+
+          await createStudentActivity({
+            studentId,
+            studentName,
+            source:       'community',
+            activityType,
+            activityKey:  item._id,
+            title,
+            description:  item.groupName || '',
+            metadata:     { groupName: item.groupName, groupId: item.groupId }
+          });
+        }
+      } catch (mirrorErr) {
+        console.warn('[StudentActivities] Community mirror error (non-fatal):', mirrorErr.message);
+      }
+    })();
+
     return ok({
       headers: CORS_HEADERS,
       body: JSON.stringify({
@@ -824,6 +953,122 @@ export async function get_communityFeed(request) {
 }
 
 export function options_communityFeed(request) {
+  return ok({ headers: CORS_HEADERS, body: '' });
+}
+
+// ─────────────────────────────────────────────────────────────
+// GET STUDENT ACTIVITIES (dedicated timeline endpoint)
+// URL: /_functions/studentActivities?studentId=MEMBERID&limit=5
+//
+// Returns the latest N StudentActivities entries for a student.
+// The React dashboard calls this separately after loading the
+// main dashboard data so the feed appears with no delay.
+// ─────────────────────────────────────────────────────────────
+export async function get_studentActivities(request) {
+  const { studentId, limit } = request.query;
+
+  if (!studentId) {
+    return badRequest({ headers: CORS_HEADERS, body: JSON.stringify({ error: 'Missing studentId' }) });
+  }
+
+  try {
+    const maxItems = Math.min(parseInt(limit || '10', 10), 50);
+
+    const result = await wixData.query('StudentActivities')
+      .eq('studentId', studentId)
+      .descending('createdAt')
+      .limit(maxItems)
+      .find({ suppressAuth: true });
+
+    const activities = (result.items || []).map(item => ({
+      id:           item._id,
+      title:        item.title        || 'Activity',
+      studentId:    item.studentId,
+      studentName:  item.studentName  || '',
+      source:       item.source       || 'unknown',
+      activityType: item.activityType || '',
+      activityKey:  item.activityKey  || '',
+      description:  item.description  || '',
+      metadata:     item.metadata     || '',
+      createdAt:    item.createdAt    || item._createdDate,
+    }));
+
+    return ok({
+      headers: CORS_HEADERS,
+      body: JSON.stringify({ activities, total: activities.length })
+    });
+
+  } catch (err) {
+    console.error('studentActivities error:', err);
+    return serverError({ headers: CORS_HEADERS, body: JSON.stringify({ error: err.message }) });
+  }
+}
+
+export function options_studentActivities(request) {
+  return ok({ headers: CORS_HEADERS, body: '' });
+}
+
+// ─────────────────────────────────────────────────────────────
+// LOG STUDENT ACTIVITY (general-purpose endpoint)
+// POST /_functions/logStudentActivity
+//
+// Called by: Simulation pages, Badge/XP engine, any Wix page
+// that needs to record a timeline event.
+//
+// Body: {
+//   studentId, studentName,
+//   source, activityType, activityKey,
+//   title, description, metadata
+// }
+// ─────────────────────────────────────────────────────────────
+export async function post_logStudentActivity(request) {
+  try {
+    const body = await request.body.json();
+    const {
+      studentId, studentName,
+      source, activityType, activityKey,
+      title, description, metadata
+    } = body;
+
+    if (!studentId || !activityType) {
+      return badRequest({
+        headers: CORS_HEADERS,
+        body: JSON.stringify({ error: 'studentId and activityType are required' })
+      });
+    }
+
+    // Validate source
+    const validSources = ['books', 'simulation', 'community', 'achievement'];
+    if (source && !validSources.includes(source)) {
+      return badRequest({
+        headers: CORS_HEADERS,
+        body: JSON.stringify({ error: `Invalid source. Must be one of: ${validSources.join(', ')}` })
+      });
+    }
+
+    await createStudentActivity({
+      studentId,
+      studentName: studentName || '',
+      source:      source      || 'achievement',
+      activityType,
+      activityKey: activityKey || '',
+      title:       title       || activityType,
+      description: description || '',
+      metadata:    metadata    || null
+    });
+
+    return ok({
+      headers: CORS_HEADERS,
+      body: JSON.stringify({ success: true, message: 'Activity logged to StudentActivities' })
+    });
+
+  } catch (err) {
+    console.error('logStudentActivity error:', err);
+    return serverError({ headers: CORS_HEADERS, body: JSON.stringify({ success: false, error: err.message }) });
+  }
+}
+
+export function options_logStudentActivity(request) {
   return ok({ headers: CORS_HEADERS, body: '' });
 }
 
@@ -977,6 +1222,22 @@ export async function post_saveBookScore(request) {
       conceptUpdateResult = await updateConceptProgress(memberId);
     } catch (conceptErr) {
       conceptUpdateResult = { success: false, error: conceptErr.message };
+    }
+
+    // ── STUDENTACTIVITIES TIMELINE: log book_completed ─────────
+    // Only log on INSERT (first completion). On UPDATE, skip to avoid
+    // duplicate timeline entries for the same book.
+    if (action === 'inserted') {
+      await createStudentActivity({
+        studentId:    memberId,
+        studentName:  userRole.fullName || userRole.email || '',
+        source:       'books',
+        activityType: 'book_completed',
+        activityKey:  bookId,
+        title:        `Completed ${bookName || bookId}`,
+        description:  `Average score: ${averageScore}`,
+        metadata:     { bookId, bookName, averageScore }
+      });
     }
 
     return ok({ headers: CORS_HEADERS, body: JSON.stringify({ success: true, action, averageScore, conceptUpdateResult }) });

@@ -1,5 +1,29 @@
 import { useState, useEffect, useRef } from 'react';
 
+// ─── ACTIVITY ICON RESOLVER ───────────────────────────────────────────────────
+// Maps activityType → the correct emoji for the timeline.
+// Used in both normalizeApiData and the activityFeed normaliser.
+function getActivityIcon(activityType, source) {
+  const t = (activityType || '').toLowerCase();
+  const s = (source      || '').toLowerCase();
+  if (t === 'book_completed')                return '📚';
+  if (t === 'simulation_started')            return '🚀';
+  if (t === 'simulation_pretest_completed')  return '📋';
+  if (t === 'simulation_posttest_completed') return '✅';
+  if (t === 'simulation_completed')          return '🧪';
+  if (t === 'community_post')                return '📝';
+  if (t === 'community_comment')             return '💬';
+  if (t === 'community_reaction')            return '❤️';
+  if (t === 'community_group_joined')        return '👥';
+  if (t === 'badge_unlocked')                return '🏆';
+  if (t === 'xp_level_up')                   return '🚀';
+  // Source-level fallbacks
+  if (s === 'simulation')                    return '🧪';
+  if (s === 'community')                     return '📝';
+  if (s === 'achievement')                   return '🏆';
+  return '📘';
+}
+
 // ─── CONFIG ───────────────────────────────────────────────────────────────────
 const WIX_BASE     = 'https://www.thebeyondbox.org/_functions';
 const TOTAL_BOOKS  = 11;
@@ -92,17 +116,21 @@ function normalizeApiData(apiData, memberId) {
     practical:       Number(sk.practical       || 0),
   };
 
-  // ── Recent activities ─────────────────────────────────────────────────────
+  // ── Recent activities (backward-compat list from API dashboard response) ────
+  // The live activityFeed is fetched separately via /studentActivities;
+  // this list acts as a graceful fallback in RecentActivity.jsx.
   const recent = [...acts]
     .sort((a, b) => new Date(b.completedAt) - new Date(a.completedAt))
-    .slice(0, 3)
-    .map((a, i) => ({
-      title: a.title || 'Untitled Activity',
-      book:  a.title || '',
+    .slice(0, 5)
+    .map((a) => ({
+      title:        a.title        || 'Untitled Activity',
+      book:         a.title        || '',
+      activityType: a.activityType || '',
+      type:         a.type         || 'books',
       date:  a.completedAt
         ? new Date(a.completedAt).toLocaleDateString('en-GB', { day:'2-digit', month:'short', year:'numeric' })
         : '',
-      icon: ['📘','📙','📗'][i % 3],
+      icon: getActivityIcon(a.activityType, a.type),
     }));
 
   // ── XP + level (from CMS) ────────────────────────────────────────────────
@@ -266,6 +294,35 @@ export function useStudentData() {
             }
           } catch (commErr) {
             console.warn('[BeyondBox] Community feed fetch failed (non-fatal):', commErr.message);
+          }
+        }
+
+        // ── Non-blocking: fetch StudentActivities timeline ─────────
+        // Populates activityFeed — the live feed shown in RecentActivity.jsx.
+        // Fires after main dashboard data is shown so there is zero delay.
+        if (!cancelled) {
+          try {
+            const actUrl = `${WIX_BASE}/studentActivities?studentId=${encodeURIComponent(memberId)}&limit=5`;
+            console.log('[BeyondBox] Fetching student activities:', actUrl);
+            const actRes = await fetch(actUrl);
+            if (actRes.ok) {
+              const actJson = await actRes.json();
+              console.log('[BeyondBox] Student activities:', actJson);
+              const activities = (actJson.activities || []).map(a => ({
+                id:           a.id,
+                type:         a.source       || 'books',
+                activityType: a.activityType || '',
+                icon:         getActivityIcon(a.activityType, a.source),
+                title:        a.title        || 'Activity',
+                detail:       a.description  || '',
+                timestamp:    a.createdAt,
+              }));
+              if (!cancelled) {
+                setData(prev => prev ? { ...prev, activityFeed: activities } : prev);
+              }
+            }
+          } catch (actErr) {
+            console.warn('[BeyondBox] Student activities fetch failed (non-fatal):', actErr.message);
           }
         }
 
