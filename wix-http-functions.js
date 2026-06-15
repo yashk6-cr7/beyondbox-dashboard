@@ -237,7 +237,7 @@ export async function get_studentDashboard(request) {
     // GET RECENT ACTIVITIES from StudentActivities CMS (the central timeline engine)
     const activityResult = await wixData.query('StudentActivities')
       .eq('studentId', studentId)
-      .descending('createdAt')
+      .descending('_createdDate')
       .limit(5)
       .find({ suppressAuth: true });
 
@@ -997,7 +997,7 @@ export async function get_studentActivities(request) {
       // Query PHQuizResults using studentId field
       const quizRes = await wixData.query('PHQuizResults')
         .eq('studentId', studentId)
-        .descending('createdDate')
+        .descending('_createdDate')
         .limit(100)
         .find({ suppressAuth: true });
 
@@ -1047,7 +1047,7 @@ export async function get_studentActivities(request) {
 
     const result = await wixData.query('StudentActivities')
       .eq('studentId', studentId)
-      .descending('createdAt')
+      .descending('_createdDate')
       .limit(maxItems)
       .find({ suppressAuth: true });
 
@@ -1060,7 +1060,14 @@ export async function get_studentActivities(request) {
       activityType: item.activityType || '',
       activityKey:  item.activityKey  || '',
       description:  item.description  || '',
-      metadata:     item.metadata     || '',
+      metadata:     (() => {
+        if (!item.metadata) return null;
+        try {
+          return typeof item.metadata === 'string' ? JSON.parse(item.metadata) : item.metadata;
+        } catch (e) {
+          return item.metadata;
+        }
+      })(),
       createdAt:    item.createdAt    || item._createdDate,
     }));
 

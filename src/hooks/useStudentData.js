@@ -289,7 +289,17 @@ export function useStudentData() {
             // — Badges —
             const unlockedBadges = (normalizedData.badges || []).filter(b => b.unlocked);
             if (unlockedBadges.length > 0) {
-              const alreadyLogged = JSON.parse(localStorage.getItem(BADGE_LOG_KEY) || '[]');
+              let alreadyLogged = [];
+              try {
+                const stored = localStorage.getItem(BADGE_LOG_KEY);
+                if (stored) {
+                  alreadyLogged = JSON.parse(stored);
+                  if (!Array.isArray(alreadyLogged)) alreadyLogged = [];
+                }
+              } catch (parseErr) {
+                alreadyLogged = [];
+              }
+
               const newBadges = unlockedBadges.filter(b => !alreadyLogged.includes(b.id));
 
               if (newBadges.length > 0) {
@@ -396,6 +406,7 @@ export function useStudentData() {
                 title:        a.title        || 'Activity',
                 detail:       a.description  || '',
                 timestamp:    a.createdAt,
+                metadata:     a.metadata     || null,
               }));
               if (!cancelled) {
                 setData(prev => prev ? { ...prev, activityFeed: activities } : prev);
