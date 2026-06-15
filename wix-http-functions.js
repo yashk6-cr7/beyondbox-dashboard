@@ -166,9 +166,13 @@ async function createStudentActivity({
   activityKey,
   title,
   description,
-  metadata
+  metadata,
+  createdAt,
+  date,
+  time
 }) {
   try {
+    const origCreatedAt = createdAt || new Date();
     const entry = {
       title:        title        || activityType,
       studentId,
@@ -178,8 +182,9 @@ async function createStudentActivity({
       activityKey:  activityKey  || '',
       description:  description  || '',
       metadata:     metadata ? JSON.stringify(metadata) : '',
-      createdAt:    new Date(),
-      time:         new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
+      createdAt:    origCreatedAt,
+      date:         date         || new Date(origCreatedAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }),
+      time:         time         || new Date(origCreatedAt).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
     };
     await wixData.insert('StudentActivities', entry, { suppressAuth: true });
     console.log(`[StudentActivities] Logged: ${activityType} for ${studentId}`);
@@ -364,6 +369,8 @@ export async function get_studentDashboard(request) {
               activityType: item.activityType || '',
               description:  item.description  || '',
               completedAt:  item.createdAt    || item._createdDate,
+              date:         item.date         || '',
+              time:         item.time         || '',
             }));
           }
           // Fallback: derive from books (backward compat)
@@ -374,6 +381,8 @@ export async function get_studentDashboard(request) {
             activityType:'book_completed',
             description: '',
             completedAt: item.updatedAt,
+            date:        item.date || '',
+            time:        item.time || '',
           }));
         })(),
         teacherNote: student.tutorComment || '',
@@ -1034,6 +1043,7 @@ export async function get_studentActivities(request) {
             const scoreText    = result.percentage != null
               ? `${result.percentage}%`
               : (result.score != null ? String(result.score) : '');
+            const origDate     = result._createdDate || result.createdAt || new Date();
 
             await createStudentActivity({
               studentId,
@@ -1048,7 +1058,9 @@ export async function get_studentActivities(request) {
                 score:      result.score,
                 percentage: result.percentage,
                 testOrder:  result.testOrder
-              }
+              },
+              createdAt:    origDate,
+              time:         result.time || new Date(origDate).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
             });
 
             knownKeys.add(result._id);
@@ -1077,23 +1089,27 @@ export async function get_studentActivities(request) {
             .find({ suppressAuth: true });
 
           for (const score of bookRes.items || []) {
-            if (knownKeys.has(score.bookKey)) continue;
+            const key = score.bookKey || score.bookName || score._id;
+            if (knownKeys.has(key)) continue;
 
             const bookTitle = score.bookName || score.bookKey || 'Book';
             const avgScore  = score.averageScore != null ? score.averageScore : '';
+            const origDate  = score._createdDate || score.createdAt || score.updatedAt || new Date();
 
             await createStudentActivity({
               studentId,
               studentName,
               source:       'books',
               activityType: 'book_completed',
-              activityKey:  score.bookKey,
+              activityKey:  key,
               title:        `📚 Completed ${bookTitle}`,
               description:  avgScore !== '' ? `Average score: ${avgScore}` : '',
-              metadata:     { bookId: score.bookKey, bookName: bookTitle, averageScore: avgScore }
+              metadata:     { bookId: key, bookName: bookTitle, averageScore: avgScore },
+              createdAt:    origDate,
+              time:         score.time || new Date(origDate).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
             });
 
-            knownKeys.add(score.bookKey);
+            knownKeys.add(key);
           }
 
           console.log(`[StudentActivities] BookScores mirror complete for ${studentId}`);
@@ -1128,6 +1144,8 @@ export async function get_studentActivities(request) {
         catch (e) { return item.metadata; }
       })(),
       createdAt: item._createdDate || item.createdAt,
+      date:      item.date         || '',
+      time:      item.time         || '',
     }));
 
     return ok({

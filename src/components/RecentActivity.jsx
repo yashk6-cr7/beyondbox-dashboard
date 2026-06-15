@@ -39,12 +39,12 @@ function FeedItem({ item, index }) {
              || ACTIVITY_META[item.type]
              || ACTIVITY_META.default;
 
-  const date = item.timestamp
+  const date = item.date || (item.timestamp
     ? new Date(item.timestamp).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })
-    : item.date || '—';
-  const time = item.timestamp
+    : '—');
+  const time = item.time || (item.timestamp
     ? new Date(item.timestamp).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
-    : '';
+    : '');
 
   return (
     <div className="feed-item">
@@ -82,15 +82,17 @@ export default function RecentActivity({ student, onViewAll }) {
     detail:       a.description  || '',
     timestamp:    a.completedAt  || a.date || null,
     date:         a.date         || '',
+    time:         a.time         || '',
   }));
   const feed = (liveFeed && liveFeed.length > 0) ? liveFeed : fallbackFeed;
 
-  // Client-side dedup safety net: if the CMS has old duplicate entries (same activityKey),
-  // only show the most recent one. Items with no activityKey are always shown.
+  // Client-side dedup safety net: if the CMS has old duplicate entries (same activityKey or title),
+  // only show the most recent one to prevent historical clutter from pushing other activities down.
   const seenKeys = new Set();
   const dedupedFeed = feed.filter(item => {
-    const key = item.activityKey || item.id;
-    if (!key) return true; // no key → always show
+    // For book completions, use title to filter duplicate completion items.
+    const key = (item.type === 'books' && item.title) ? item.title : (item.activityKey || item.id);
+    if (!key) return true;
     if (seenKeys.has(key)) return false;
     seenKeys.add(key);
     return true;

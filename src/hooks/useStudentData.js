@@ -314,27 +314,17 @@ export function useStudentData() {
             // — Badges —
             const unlockedBadges = (normalizedData.badges || []).filter(b => b.unlocked);
             if (unlockedBadges.length > 0) {
-              let alreadyLogged = [];
-              try {
-                const stored = localStorage.getItem(BADGE_LOG_KEY);
-                if (stored) {
-                  alreadyLogged = JSON.parse(stored);
-                  if (!Array.isArray(alreadyLogged)) alreadyLogged = [];
-                }
-              } catch (parseErr) {
-                alreadyLogged = [];
-              }
-
-              const newBadges = unlockedBadges.filter(b => !alreadyLogged.includes(b.id));
+              // Compare against DB badges (self-healing from desynced localStorage)
+              const newBadges = unlockedBadges.filter(b => !dbBadges.includes(b.id));
 
               if (newBadges.length > 0) {
-                // Update localStorage FIRST to prevent re-logging on rapid page reloads
+                // Update localStorage to cache current state
                 localStorage.setItem(BADGE_LOG_KEY,
-                  JSON.stringify([...alreadyLogged, ...newBadges.map(b => b.id)])
+                  JSON.stringify(Array.from(new Set([...dbBadges, ...newBadges.map(b => b.id)])))
                 );
 
-                // Log each new badge non-blocking
-                for (const badge of newBadges) {
+                // ── AWAIT all badge POSTs before the activities fetch runs ───────
+                const badgePromises = newBadges.map(badge =>
                   fetch(`${WIX_BASE}/logStudentActivity`, {
                     method:  'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -343,45 +333,46 @@ export function useStudentData() {
                       studentName:  normalizedData.name,
                       source:       'achievement',
                       activityType: 'badge_unlocked',
-                      activityKey:  badge.id,          // ← dedup key in backend
+                      activityKey:  badge.id,
                       title:        `${badge.emoji} Unlocked ${badge.title}`,
                       description:  badge.desc || '',
                       metadata:     { badgeId: badge.id, category: badge.category }
                     })
-                  }).catch(() => {}); // fully non-fatal
-                }
-
+                  }).catch(() => {})
+                );
+                await Promise.allSettled(badgePromises);
                 console.log(`[BeyondBox] Logged ${newBadges.length} new badge(s) to StudentActivities`);
               }
             }
 
             // — XP Level Up —
             const currentLevel = normalizedData.level || 1;
-            const lastLoggedLevel = parseInt(localStorage.getItem(LEVEL_LOG_KEY) || '0', 10);
 
-            if (currentLevel > 1 && currentLevel > lastLoggedLevel) {
-              // Update localStorage first
+            if (currentLevel > 1 && currentLevel > maxDbLevel) {
               localStorage.setItem(LEVEL_LOG_KEY, String(currentLevel));
 
-              // Log each new level (handles multi-level jumps)
-              for (let lvl = Math.max(lastLoggedLevel + 1, 2); lvl <= currentLevel; lvl++) {
+              // ── AWAIT all level-up POSTs too ──────────────────────────────────
+              const levelPromises = [];
+              for (let lvl = Math.max(maxDbLevel + 1, 2); lvl <= currentLevel; lvl++) {
                 const levelName = LEVEL_NAMES[Math.min(lvl, LEVEL_NAMES.length - 1)] || `Level ${lvl}`;
-                fetch(`${WIX_BASE}/logStudentActivity`, {
-                  method:  'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({
-                    studentId:    memberId,
-                    studentName:  normalizedData.name,
-                    source:       'achievement',
-                    activityType: 'xp_level_up',
-                    activityKey:  `level-${lvl}`,     // ← dedup key in backend
-                    title:        `🚀 Reached ${levelName}`,
-                    description:  `Now at Level ${lvl}`,
-                    metadata:     { level: lvl, xp: normalizedData.xp }
-                  })
-                }).catch(() => {});
+                levelPromises.push(
+                  fetch(`${WIX_BASE}/logStudentActivity`, {
+                    method:  'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      studentId:    memberId,
+                      studentName:  normalizedData.name,
+                      source:       'achievement',
+                      activityType: 'xp_level_up',
+                      activityKey:  `level-${lvl}`,
+                      title:        `🚀 Reached ${levelName}`,
+                      description:  `Now at Level ${lvl}`,
+                      metadata:     { level: lvl, xp: normalizedData.xp }
+                    })
+                  }).catch(() => {})
+                );
               }
-
+              await Promise.allSettled(levelPromises);
               console.log(`[BeyondBox] Logged XP level-up to ${currentLevel}`);
             }
           } catch (badgeLogErr) {
@@ -417,7 +408,8 @@ export function useStudentData() {
         // Fires after main dashboard data is shown so there is zero delay.
         if (!cancelled) {
           try {
-            const actUrl = `${WIX_BASE}/studentActivities?studentId=${encodeURIComponent(memberId)}&limit=5`;
+            // limit=10 so badges + tests + books all fit; UI slices to 5
+            const actUrl = `${WIX_BASE}/studentActivities?studentId=${encodeURIComponent(memberId)}&limit=10`;
             console.log('[BeyondBox] Fetching student activities:', actUrl);
             const actRes = await fetch(actUrl);
             if (actRes.ok) {
@@ -425,12 +417,15 @@ export function useStudentData() {
               console.log('[BeyondBox] Student activities:', actJson);
               const activities = (actJson.activities || []).map(a => ({
                 id:           a.id,
+                activityKey:  a.activityKey  || '',   // needed for client-side dedup
                 type:         a.source       || 'books',
                 activityType: a.activityType || '',
                 icon:         getActivityIcon(a.activityType, a.source),
                 title:        a.title        || 'Activity',
                 detail:       a.description  || '',
-                timestamp:    a.createdAt,
+                timestamp:    a.createdAt,             // ISO date from _createdDate
+                date:         a.date         || '',    // stored date string from CMS
+                time:         a.time         || '',    // stored HH:MM string from CMS
                 metadata:     a.metadata     || null,
               }));
               if (!cancelled) {
