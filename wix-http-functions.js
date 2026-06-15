@@ -196,7 +196,8 @@ export async function get_userid(request) {
   if (!member) {
     return { status: 401, headers: CORS_HEADERS, body: JSON.stringify({ error: 'User not logged in' }) };
   }
-  return { status: 200, headers: CORS_HEADERS, body: JSON.stringify({ userId: member._id, name: member.profile.nickname }) };
+  const name = member.contactDetails?.firstName || member.profile?.nickname || '';
+  return { status: 200, headers: CORS_HEADERS, body: JSON.stringify({ userId: member._id, name }) };
 }
 
 // ─────────────────────────────────────────────────────────────
