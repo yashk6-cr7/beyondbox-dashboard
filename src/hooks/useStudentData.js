@@ -130,8 +130,6 @@ function normalizeApiData(apiData, memberId) {
       type:         a.type         || 'books',
       description:  a.description  || '',
       completedAt:  a.completedAt  || null,
-      date:         a.date         || '',
-      time:         a.time         || '',
       icon: getActivityIcon(a.activityType, a.type),
     }));
 

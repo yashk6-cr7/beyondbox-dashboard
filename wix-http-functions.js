@@ -167,9 +167,7 @@ async function createStudentActivity({
   title,
   description,
   metadata,
-  createdAt,
-  date,
-  time
+  createdAt
 }) {
   try {
     const origCreatedAt = createdAt || new Date();
@@ -182,9 +180,7 @@ async function createStudentActivity({
       activityKey:  activityKey  || '',
       description:  description  || '',
       metadata:     metadata ? JSON.stringify(metadata) : '',
-      createdAt:    origCreatedAt,
-      date:         date         || new Date(origCreatedAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }),
-      time:         time         || new Date(origCreatedAt).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
+      createdAt:    origCreatedAt
     };
     await wixData.insert('StudentActivities', entry, { suppressAuth: true });
     console.log(`[StudentActivities] Logged: ${activityType} for ${studentId}`);
@@ -1059,8 +1055,7 @@ export async function get_studentActivities(request) {
                 percentage: result.percentage,
                 testOrder:  result.testOrder
               },
-              createdAt:    origDate,
-              time:         result.time || new Date(origDate).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
+              createdAt:    origDate
             });
 
             knownKeys.add(result._id);
@@ -1105,8 +1100,7 @@ export async function get_studentActivities(request) {
               title:        `📚 Completed ${bookTitle}`,
               description:  avgScore !== '' ? `Average score: ${avgScore}` : '',
               metadata:     { bookId: key, bookName: bookTitle, averageScore: avgScore },
-              createdAt:    origDate,
-              time:         score.time || new Date(origDate).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
+              createdAt:    origDate
             });
 
             knownKeys.add(key);
@@ -1143,9 +1137,7 @@ export async function get_studentActivities(request) {
         try { return typeof item.metadata === 'string' ? JSON.parse(item.metadata) : item.metadata; }
         catch (e) { return item.metadata; }
       })(),
-      createdAt: item._createdDate || item.createdAt,
-      date:      item.date         || '',
-      time:      item.time         || '',
+      createdAt: item.createdAt || item._createdDate
     }));
 
     return ok({

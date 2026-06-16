@@ -39,12 +39,12 @@ function FeedItem({ item, index }) {
              || ACTIVITY_META[item.type]
              || ACTIVITY_META.default;
 
-  const date = item.date || (item.timestamp
+  const date = item.timestamp
     ? new Date(item.timestamp).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })
-    : '—');
-  const time = item.time || (item.timestamp
+    : '—';
+  const time = item.timestamp
     ? new Date(item.timestamp).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
-    : '');
+    : '';
 
   return (
     <div className="feed-item">
