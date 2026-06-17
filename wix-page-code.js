@@ -1,65 +1,66 @@
 // ════════════════════════════════════════════════════════════════════════════
-// BEYOND BOX — Wix Page Velo Code
+// BEYOND BOX — Student Dashboard Wix Page Code
+// Paste this into the Velo page code panel for your "student-dashboard" page.
 // ════════════════════════════════════════════════════════════════════════════
 //
-// HOW TO USE:
-//   1. In your Wix Editor, open the page that contains the student dashboard.
-//   2. Click the "Dev Mode" toggle (top bar) → "Turn on Dev Mode".
-//   3. Click the {} icon (Page Code) at the bottom left.
-//   4. Paste THIS ENTIRE FILE into the page code panel.
-//   5. Make sure your iFrame element is named "dashboardFrame" in the Wix
-//      Properties panel (select the iFrame → Properties → Element ID).
-//   6. Publish and test.
+// HOW IT WORKS:
+//   • Normally: Logged-in student sees their OWN dashboard.
+//   • Tutor preview: Tutor opens ?studentId=DHARA_MEMBERID → Dhara's dashboard
+//     is loaded inside the iFrame. No backend role check needed — the tutor
+//     is simply given a URL with the student's ID embedded.
 //
 // ════════════════════════════════════════════════════════════════════════════
 
 import { currentMember } from 'wix-members';
+import wixLocation from 'wix-location';
 
 $w.onReady(async function () {
 
-  // ── 1. Get the iFrame element ─────────────────────────────────────────────
   const frame = $w('#dashboardFrame');
 
-  // ── 2. Get the logged-in member ───────────────────────────────────────────
-  let member = null;
-  try {
-    member = await currentMember.getMember();
-  } catch (e) {
-    console.warn('[BeyondBox] Could not get member:', e.message);
+  // ── Determine which student ID to send to the iFrame ──────────────────────
+  //
+  //   Priority 1: ?studentId= in the URL  (tutor previewing a student)
+  //   Priority 2: logged-in member's own ID (normal student view)
+  //   Priority 3: null (not logged in — iFrame shows login prompt)
+
+  let targetStudentId = null;
+
+  // Check URL query param first (fastest — no async needed)
+  const queryStudentId = wixLocation.query.studentId;
+  if (queryStudentId) {
+    targetStudentId = queryStudentId;
+    console.log('[BeyondBox Wix] Tutor preview mode — loading student:', targetStudentId);
+  } else {
+    // No override → load the logged-in member's own dashboard
+    try {
+      const member = await currentMember.getMember();
+      if (member && member._id) {
+        targetStudentId = member._id;
+        console.log('[BeyondBox Wix] Student mode — loading own dashboard:', targetStudentId);
+      }
+    } catch (e) {
+      console.warn('[BeyondBox Wix] Could not get current member:', e.message);
+    }
   }
 
-  // ── 3. Listen for the iFrame "ready" signal, then send the memberId ───────
+  // ── Listen for BEYONDBOX_READY signal from the React iFrame ───────────────
+  //   The React app sends this when it has mounted and is ready to receive data.
   frame.onMessage((event) => {
     const msg = event.data;
-
-    // React app sends { type: 'BEYONDBOX_READY' } when it has mounted
     if (msg && msg.type === 'BEYONDBOX_READY') {
-      if (member) {
-        frame.postMessage({
-          type:     'BEYONDBOX_MEMBER',
-          memberId: member._id,
-        });
-        console.log('[BeyondBox Wix] Sent memberId to iFrame:', member._id);
-      } else {
-        // Not logged in — send null so the React app shows login prompt
-        frame.postMessage({
-          type:     'BEYONDBOX_MEMBER',
-          memberId: null,
-        });
-      }
+      frame.postMessage({ studentId: targetStudentId });
+      console.log('[BeyondBox Wix] Sent studentId on READY signal:', targetStudentId);
     }
   });
 
-  // ── 4. Also send memberId immediately (in case the iFrame loaded first) ───
-  //    The React hook handles duplicate messages gracefully.
-  if (member) {
-    setTimeout(() => {
-      try {
-        frame.postMessage({
-          type:     'BEYONDBOX_MEMBER',
-          memberId: member._id,
-        });
-      } catch (_) {}
-    }, 800);
-  }
+  // ── Also fire immediately after 800ms ─────────────────────────────────────
+  //   Handles the case where the iFrame loaded before the parent attached
+  //   the message listener (race condition on slow connections).
+  setTimeout(() => {
+    try {
+      frame.postMessage({ studentId: targetStudentId });
+      console.log('[BeyondBox Wix] Sent studentId on timeout fallback:', targetStudentId);
+    } catch (_) {}
+  }, 800);
 });

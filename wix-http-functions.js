@@ -364,9 +364,7 @@ export async function get_studentDashboard(request) {
               type:         item.source       || 'books',
               activityType: item.activityType || '',
               description:  item.description  || '',
-              completedAt:  item.createdAt    || item._createdDate,
-              date:         item.date         || '',
-              time:         item.time         || '',
+              completedAt:  item.createdAt    || item._createdDate
             }));
           }
           // Fallback: derive from books (backward compat)
@@ -376,9 +374,7 @@ export async function get_studentDashboard(request) {
             type:        'books',
             activityType:'book_completed',
             description: '',
-            completedAt: item.updatedAt,
-            date:        item.date || '',
-            time:        item.time || '',
+            completedAt: item.updatedAt
           }));
         })(),
         teacherNote: student.tutorComment || '',
@@ -1415,6 +1411,77 @@ export async function post_saveBookScore(request) {
 export function options_saveBookScore(request) {
   return ok({ headers: CORS_HEADERS, body: '' });
 }
+
+
+// ─────────────────────────────────────────────────────────────
+// DELETE BOOK SCORE (home_learner only)
+// POST /_functions/deleteBookScore
+// ─────────────────────────────────────────────────────────────
+export async function post_deleteBookScore(request) {
+  try {
+    const body = await request.body.json();
+    const { memberId, bookId } = body;
+
+    if (!memberId || !bookId) {
+      return badRequest({ headers: CORS_HEADERS, body: JSON.stringify({ error: 'memberId and bookId required' }) });
+    }
+
+    const roleResult = await wixData.query('UserRoles')
+      .eq('memberId', memberId)
+      .limit(1)
+      .find({ suppressAuth: true });
+
+    if (roleResult.items.length === 0) {
+      return notFound({ headers: CORS_HEADERS, body: JSON.stringify({ error: 'User not found' }) });
+    }
+
+    const userRole = roleResult.items[0];
+
+    if (userRole.role !== 'home_learner') {
+      return badRequest({ headers: CORS_HEADERS, body: JSON.stringify({ error: 'Only home_learner can delete scores' }) });
+    }
+
+    // Delete BookScore
+    const result = await wixData.query('BookScores')
+      .eq('studentId', memberId)
+      .eq('bookKey',   bookId)
+      .find({ suppressAuth: true });
+
+    if (result.items.length > 0) {
+      await wixData.remove('BookScores', result.items[0]._id, { suppressAuth: true });
+    }
+
+    // Recalculate ConceptProgress
+    let conceptUpdateResult = null;
+    try {
+      conceptUpdateResult = await updateConceptProgress(memberId);
+    } catch (conceptErr) {
+      conceptUpdateResult = { success: false, error: conceptErr.message };
+    }
+
+    // Clean up timeline entries
+    const activityResult = await wixData.query('StudentActivities')
+      .eq('studentId',    memberId)
+      .eq('activityType', 'book_completed')
+      .eq('activityKey',  bookId)
+      .find({ suppressAuth: true });
+
+    for (const act of activityResult.items) {
+      await wixData.remove('StudentActivities', act._id, { suppressAuth: true });
+    }
+
+    return ok({ headers: CORS_HEADERS, body: JSON.stringify({ success: true, conceptUpdateResult }) });
+
+  } catch (err) {
+    console.error('deleteBookScore error:', err);
+    return serverError({ headers: CORS_HEADERS, body: JSON.stringify({ error: err.message }) });
+  }
+}
+
+export function options_deleteBookScore(request) {
+  return ok({ headers: CORS_HEADERS, body: '' });
+}
+
 
 
 // ─────────────────────────────────────────────────────────────
