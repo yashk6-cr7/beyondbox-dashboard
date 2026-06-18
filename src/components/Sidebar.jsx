@@ -2,7 +2,6 @@ import React, { useRef } from 'react';
 import { navLinks } from '../studentData';
 
 const navItems = [
-  { key:'home',         label:'Home',         emoji:'🏠', action:'external', url: navLinks.home },
   { key:'shop',         label:'Shop',         emoji:'🛍️', action:'external', url: navLinks.shop },
   { key:'simLab',       label:'Sim Lab',      emoji:'🔬', action:'external', url: navLinks.simLab },
   { key:'community',    label:'Community',    emoji:'👥', action:'external', url: navLinks.community },

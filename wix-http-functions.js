@@ -79,8 +79,16 @@ async function updateConceptProgress(studentId) {
     const totalBooksCompleted = books.length;
 
     if (totalBooksCompleted === 0) {
-      console.log(`[ConceptProgress] No books found for student ${studentId} — skipping.`);
-      return { success: true, message: 'No books found' };
+      console.log(`[ConceptProgress] No books found for student ${studentId} — clearing ConceptProgress.`);
+      const existing = await wixData.query('ConceptProgress')
+        .eq('studentId', studentId)
+        .limit(100)
+        .find({ suppressAuth: true });
+        
+      for (const item of existing.items) {
+        await wixData.remove('ConceptProgress', item._id, { suppressAuth: true });
+      }
+      return { success: true, message: 'Cleared all concept progress' };
     }
 
     const maxPossibleScore = totalBooksCompleted * 4;
@@ -1414,77 +1422,6 @@ export function options_saveBookScore(request) {
 
 
 // ─────────────────────────────────────────────────────────────
-// DELETE BOOK SCORE (home_learner only)
-// POST /_functions/deleteBookScore
-// ─────────────────────────────────────────────────────────────
-export async function post_deleteBookScore(request) {
-  try {
-    const body = await request.body.json();
-    const { memberId, bookId } = body;
-
-    if (!memberId || !bookId) {
-      return badRequest({ headers: CORS_HEADERS, body: JSON.stringify({ error: 'memberId and bookId required' }) });
-    }
-
-    const roleResult = await wixData.query('UserRoles')
-      .eq('memberId', memberId)
-      .limit(1)
-      .find({ suppressAuth: true });
-
-    if (roleResult.items.length === 0) {
-      return notFound({ headers: CORS_HEADERS, body: JSON.stringify({ error: 'User not found' }) });
-    }
-
-    const userRole = roleResult.items[0];
-
-    if (userRole.role !== 'home_learner') {
-      return badRequest({ headers: CORS_HEADERS, body: JSON.stringify({ error: 'Only home_learner can delete scores' }) });
-    }
-
-    // Delete BookScore
-    const result = await wixData.query('BookScores')
-      .eq('studentId', memberId)
-      .eq('bookKey',   bookId)
-      .find({ suppressAuth: true });
-
-    if (result.items.length > 0) {
-      await wixData.remove('BookScores', result.items[0]._id, { suppressAuth: true });
-    }
-
-    // Recalculate ConceptProgress
-    let conceptUpdateResult = null;
-    try {
-      conceptUpdateResult = await updateConceptProgress(memberId);
-    } catch (conceptErr) {
-      conceptUpdateResult = { success: false, error: conceptErr.message };
-    }
-
-    // Clean up timeline entries
-    const activityResult = await wixData.query('StudentActivities')
-      .eq('studentId',    memberId)
-      .eq('activityType', 'book_completed')
-      .eq('activityKey',  bookId)
-      .find({ suppressAuth: true });
-
-    for (const act of activityResult.items) {
-      await wixData.remove('StudentActivities', act._id, { suppressAuth: true });
-    }
-
-    return ok({ headers: CORS_HEADERS, body: JSON.stringify({ success: true, conceptUpdateResult }) });
-
-  } catch (err) {
-    console.error('deleteBookScore error:', err);
-    return serverError({ headers: CORS_HEADERS, body: JSON.stringify({ error: err.message }) });
-  }
-}
-
-export function options_deleteBookScore(request) {
-  return ok({ headers: CORS_HEADERS, body: '' });
-}
-
-
-
-// ─────────────────────────────────────────────────────────────
 // SAVE HOME LEARNER REMARKS (home_learner only)
 // POST /_functions/saveHomeLearnerRemarks
 // ─────────────────────────────────────────────────────────────
@@ -1555,6 +1492,77 @@ export async function get_debugPH(request) {
 }
 
 export function options_debugPH(request) {
+  return ok({ headers: CORS_HEADERS, body: '' });
+}
+
+
+// ─────────────────────────────────────────────────────────────
+// DELETE BOOK SCORE (home_learner only)
+// POST /_functions/deleteBookScore
+// Body: { memberId, bookId }
+// ─────────────────────────────────────────────────────────────
+export async function post_deleteBookScore(request) {
+  try {
+    const body = await request.body.json();
+    const { memberId, bookId } = body;
+
+    if (!memberId || !bookId) {
+      return badRequest({ headers: CORS_HEADERS, body: JSON.stringify({ error: 'memberId and bookId required' }) });
+    }
+
+    const roleResult = await wixData.query('UserRoles')
+      .eq('memberId', memberId)
+      .limit(1)
+      .find({ suppressAuth: true });
+
+    if (roleResult.items.length === 0) {
+      return notFound({ headers: CORS_HEADERS, body: JSON.stringify({ error: 'User not found in UserRoles' }) });
+    }
+
+    const userRole = roleResult.items[0];
+
+    if (userRole.role !== 'home_learner') {
+      return badRequest({ headers: CORS_HEADERS, body: JSON.stringify({ error: 'Only home_learner can delete scores' }) });
+    }
+
+    // Delete from BookScores CMS
+    const existingResult = await wixData.query('BookScores')
+      .eq('studentId', memberId)
+      .eq('bookKey',   bookId)
+      .find({ suppressAuth: true });
+
+    if (existingResult.items.length > 0) {
+      await wixData.remove('BookScores', existingResult.items[0]._id, { suppressAuth: true });
+    }
+
+    // Recalculate ConceptProgress
+    let conceptUpdateResult = null;
+    try {
+      conceptUpdateResult = await updateConceptProgress(memberId);
+    } catch (conceptErr) {
+      conceptUpdateResult = { success: false, error: conceptErr.message };
+    }
+
+    // Clean up any completion activity from the StudentActivities timeline
+    const activityResult = await wixData.query('StudentActivities')
+      .eq('studentId',    memberId)
+      .eq('activityType', 'book_completed')
+      .eq('activityKey',  bookId)
+      .find({ suppressAuth: true });
+
+    for (const act of activityResult.items) {
+      await wixData.remove('StudentActivities', act._id, { suppressAuth: true });
+    }
+
+    return ok({ headers: CORS_HEADERS, body: JSON.stringify({ success: true, conceptUpdateResult }) });
+
+  } catch (err) {
+    console.error('deleteBookScore error:', err);
+    return serverError({ headers: CORS_HEADERS, body: JSON.stringify({ error: err.message }) });
+  }
+}
+
+export function options_deleteBookScore(request) {
   return ok({ headers: CORS_HEADERS, body: '' });
 }
 
