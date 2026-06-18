@@ -192,6 +192,28 @@ async function createStudentActivity({
     };
     await wixData.insert('StudentActivities', entry, { suppressAuth: true });
     console.log(`[StudentActivities] Logged: ${activityType} for ${studentId}`);
+
+    // ── Trim to max 20 activities per student (oldest deleted first) ────────────
+    try {
+      const MAX_ACTIVITIES = 20;
+      const allActivities = await wixData.query('StudentActivities')
+        .eq('studentId', studentId)
+        .descending('createdAt')
+        .limit(1000)
+        .find({ suppressAuth: true });
+
+      if (allActivities.items.length > MAX_ACTIVITIES) {
+        const toDelete = allActivities.items.slice(MAX_ACTIVITIES);
+        for (const old of toDelete) {
+          await wixData.remove('StudentActivities', old._id, { suppressAuth: true });
+        }
+        console.log(`[StudentActivities] Trimmed ${toDelete.length} old entries for ${studentId}`);
+      }
+    } catch (trimErr) {
+      // Non-fatal — trimming failure must never block the parent activity log
+      console.warn('[StudentActivities] Trim error (non-fatal):', trimErr.message);
+    }
+
   } catch (err) {
     // Non-fatal — never block parent operations
     console.error('[StudentActivities] createStudentActivity error:', err.message);
