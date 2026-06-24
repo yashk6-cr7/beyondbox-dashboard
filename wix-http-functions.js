@@ -1958,3 +1958,15 @@ export function options_getAIInsights(request) {
   return ok({ headers: CORS_HEADERS, body: '' });
 }
 
+export async function get_testmodels(request) {
+  try {
+    const apiKey = await getSecret('GEMINI_API_KEY');
+    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`);
+    const json = await res.json();
+    return ok({ headers: CORS_HEADERS, body: JSON.stringify(json) });
+  } catch (err) {
+    return serverError({ headers: CORS_HEADERS, body: JSON.stringify({ error: err.message }) });
+  }
+}
+
+
