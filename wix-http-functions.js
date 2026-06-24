@@ -12,6 +12,8 @@
 import { currentMember } from 'wix-members-backend';
 import wixData from 'wix-data';
 import { ok, badRequest, serverError, notFound } from 'wix-http-functions';
+import { getSecret } from 'wix-secrets-backend';
+import { fetch } from 'wix-fetch';
 // NOTE: No Buffer import needed — it's a global in Wix Velo
 // NOTE: No mediaManager import needed — we store base64 directly
 
@@ -195,7 +197,7 @@ async function createStudentActivity({
 
     // ── Trim to max 20 activities per student (oldest deleted first) ────────────
     try {
-      const MAX_ACTIVITIES = 20;
+      const MAX_ACTIVITIES = 8;
       const allActivities = await wixData.query('StudentActivities')
         .eq('studentId', studentId)
         .descending('createdAt')
@@ -639,6 +641,23 @@ export async function post_saveTutorComment(request) {
     const record = roleResults.items[0];
     record.tutorComment = comment;
     await wixData.update('UserRoles', record, { suppressAuth: true });
+
+    // Mark AI insights as stale so they regenerate on next dashboard load
+    try {
+      const cacheResult = await wixData.query('AIInsightsCache')
+        .eq('studentId', studentId)
+        .limit(1)
+        .find({ suppressAuth: true });
+      if (cacheResult.items.length > 0) {
+        const cacheRecord = cacheResult.items[0];
+        cacheRecord.isStale = true;
+        await wixData.update('AIInsightsCache', cacheRecord, { suppressAuth: true });
+        console.log('[AIInsights] Marked stale for student:', studentId);
+      }
+    } catch (staleErr) {
+      console.warn('[AIInsights] Could not mark stale (non-fatal):', staleErr.message);
+    }
+
     return ok({ headers: CORS_HEADERS, body: JSON.stringify({ success: true }) });
   } catch (err) {
     console.error('saveTutorComment error:', err);
@@ -1430,6 +1449,21 @@ export async function post_saveBookScore(request) {
       });
     }
 
+    try {
+      const cacheResult = await wixData.query('AIInsightsCache')
+        .eq('studentId', memberId)
+        .limit(1)
+        .find({ suppressAuth: true });
+      if (cacheResult.items.length > 0) {
+        const cacheRecord = cacheResult.items[0];
+        cacheRecord.isStale = true;
+        await wixData.update('AIInsightsCache', cacheRecord, { suppressAuth: true });
+        console.log('[AIInsights] Marked stale after book save for student:', memberId);
+      }
+    } catch (staleErr) {
+      console.warn('[AIInsights] Could not mark stale (non-fatal):', staleErr.message);
+    }
+
     return ok({ headers: CORS_HEADERS, body: JSON.stringify({ success: true, action, averageScore, conceptUpdateResult }) });
 
   } catch (err) {
@@ -1585,6 +1619,342 @@ export async function post_deleteBookScore(request) {
 }
 
 export function options_deleteBookScore(request) {
+  return ok({ headers: CORS_HEADERS, body: '' });
+}
+
+
+// ─────────────────────────────────────────────────────────────
+// GET AI INSIGHTS
+// URL: /_functions/getAIInsights?studentId=MEMBERID
+// ─────────────────────────────────────────────────────────────
+export async function get_getAIInsights(request) {
+  try {
+    const studentId = request.query.studentId;
+    if (!studentId) {
+      return badRequest({ headers: CORS_HEADERS, body: JSON.stringify({ error: 'Missing studentId' }) });
+    }
+
+    // Step B - Check AIInsightsCache
+    try {
+      const cacheResult = await wixData.query('AIInsightsCache')
+        .eq('studentId', studentId)
+        .limit(1)
+        .find({ suppressAuth: true });
+      if (cacheResult.items.length > 0) {
+        const record = cacheResult.items[0];
+        if (record.isStale === false) {
+          return ok({
+            headers: CORS_HEADERS,
+            body: JSON.stringify({
+              cached: true,
+              overallSummary: record.overallSummary,
+              strongSkills: record.strongSkills,
+              developingSkills: record.developingSkills,
+              activityRecommendations: record.activityRecommendations,
+              conceptRecommendations: record.conceptRecommendations,
+              careerSuggestions: record.careerSuggestions
+            })
+          });
+        }
+      }
+    } catch (cacheErr) {
+      console.warn('[AIInsights] Cache check failed, proceeding to generate:', cacheErr.message);
+    }
+
+    // Step C - Fetch all student data in parallel
+    const [userRolesRes, bookScoresRes, conceptProgressRes, achievementsRes] = await Promise.all([
+      wixData.query('UserRoles')
+        .eq('memberId', studentId)
+        .limit(1)
+        .find({ suppressAuth: true }),
+      wixData.query('BookScores')
+        .eq('studentId', studentId)
+        .limit(100)
+        .find({ suppressAuth: true }),
+      wixData.query('ConceptProgress')
+        .eq('studentId', studentId)
+        .limit(100)
+        .find({ suppressAuth: true }),
+      wixData.query('StudentActivities')
+        .eq('studentId', studentId)
+        .eq('source', 'achievement')
+        .limit(1000)
+        .find({ suppressAuth: true })
+    ]);
+
+    // Step D - Process the data
+    const userRole = userRolesRes.items[0] || {};
+    const fullName = userRole.fullName || 'Student';
+    const firstName = fullName.split(' ')[0];
+    const batchName = userRole.batchName || '';
+    const tutorComment = userRole.tutorComment || 'No tutor observations provided.';
+
+    const books = bookScoresRes.items || [];
+    const booksCompleted = books.length;
+
+    let cognitive = 0;
+    let creative = 0;
+    let communication = 0;
+    let socialEmotional = 0;
+    let physical = 0;
+    let practical = 0;
+
+    if (booksCompleted > 0) {
+      const sumCog = books.reduce((sum, b) => sum + (Number(b.cognitive) || 0), 0);
+      const sumCre = books.reduce((sum, b) => sum + (Number(b.creative) || 0), 0);
+      const sumCom = books.reduce((sum, b) => sum + (Number(b.communication) || 0), 0);
+      const sumSoc = books.reduce((sum, b) => sum + (Number(b.socialEmotional) || 0), 0);
+      const sumPhy = books.reduce((sum, b) => sum + (Number(b.physical) || 0), 0);
+      const sumPra = books.reduce((sum, b) => sum + (Number(b.practical) || 0), 0);
+
+      cognitive = Math.round((sumCog / booksCompleted) * 10) / 10;
+      creative = Math.round((sumCre / booksCompleted) * 10) / 10;
+      communication = Math.round((sumCom / booksCompleted) * 10) / 10;
+      socialEmotional = Math.round((sumSoc / booksCompleted) * 10) / 10;
+      physical = Math.round((sumPhy / booksCompleted) * 10) / 10;
+      practical = Math.round((sumPra / booksCompleted) * 10) / 10;
+    }
+
+    const xp = books.reduce((sum, b) => sum + Math.round((Number(b.averageScore || 0) / 4) * 200), 100);
+
+    const LEVEL_THRESHOLDS = [0, 400, 800, 1200, 1600, 2200];
+    let level = 1;
+    for (let i = LEVEL_THRESHOLDS.length - 1; i >= 0; i--) {
+      if (xp >= LEVEL_THRESHOLDS[i]) {
+        level = Math.min(i + 1, 5);
+        break;
+      }
+    }
+
+    const badgeCount = achievementsRes.items.length;
+
+    let conceptProgressText = '';
+    if (conceptProgressRes.items && conceptProgressRes.items.length > 0) {
+      conceptProgressText = conceptProgressRes.items.map(record => {
+        return `${record.subject || ''} - ${record.conceptName || ''}: ${record.progressPercent != null ? record.progressPercent : 0}% (${record.masteryLevel || ''})`;
+      }).join('\n');
+    } else {
+      conceptProgressText = 'No concept progress data available.';
+    }
+
+    // Step E - Build the prompt string
+    const promptText = `You are a senior educational analyst for Beyond Box, a STEAM learning platform for children.
+
+Generate a comprehensive, deeply personalized educational insight report for this student.
+Return ONLY a valid JSON object. No markdown. No extra text. No explanation. Just JSON.
+
+STUDENT PROFILE:
+Name: ${firstName}
+Full Name: ${fullName}
+Batch: ${batchName}
+Books Completed: ${booksCompleted}
+XP Earned: ${xp}
+Level: ${level}
+Achievement Badges: ${badgeCount}
+
+CONCEPT PROGRESS (PRIMARY SIGNAL — weight this most heavily):
+${conceptProgressText}
+
+SKILL SCORE AVERAGES (SUPPORTING TREND DATA — use to confirm or contrast concepts):
+Each score is out of 4.
+Cognitive: ${cognitive}
+Creative: ${creative}
+Communication: ${communication}
+Social Emotional: ${socialEmotional}
+Physical: ${physical}
+Practical: ${practical}
+
+TUTOR OBSERVATIONS (HIGH IMPORTANCE — treat as qualitative insight):
+${tutorComment}
+
+Analyze the tutor comment carefully for:
+- Recurring themes: confidence, focus, curiosity, creativity, leadership, communication, participation
+- Positive qualities observed
+- Areas where growth or support is suggested
+- Learning behavior and personality indicators
+- Any other meaningful patterns
+
+INSTRUCTIONS:
+
+overallSummary:
+Write a rich, detailed educational insight paragraph — not just 2-3 sentences.
+This should read like a genuine written assessment from an educator who knows this child well.
+Cover: overall performance, strongest areas, developing areas, learning journey progress,
+XP and badge achievements as engagement indicators, tutor observations and what they reveal
+about learning behavior, confidence, curiosity, creativity, communication, social patterns,
+leadership signals, and any other meaningful themes found in the tutor comment.
+Use ${firstName} naturally throughout. Do not say 'the student'.
+If tutor comment contradicts scores, acknowledge both perspectives.
+
+strongSkills:
+Skills where ConceptProgress shows high progressPercent OR mastery is Strong,
+confirmed or aligned with tutor observations or skill score averages above 2.5.
+Return as array of readable skill name strings.
+
+developingSkills:
+Skills where ConceptProgress shows lower progressPercent OR mastery is Developing or Needs Support,
+OR where tutor comment flags growth opportunities,
+OR where skill score averages are 2.5 or below.
+Return as array of readable skill name strings.
+
+activityRecommendations:
+Only for developing skills.
+Each activity must be specific, practical, and age-appropriate.
+Directly address the gap identified.
+Return as object where each key is a skill name and value is array of 3 activity strings.
+
+conceptRecommendations:
+Based on ConceptProgress data.
+Each recommendation references the specific concept and gives a meaningful next step direction.
+Return as array of objects: { subject: string, recommendation: string }
+
+careerSuggestions:
+Based on strongest skill combination across all signals.
+Return as array of objects: { title: string, description: string }
+Suggest 3-4 careers.
+
+Return this exact JSON structure and NOTHING else:
+{
+  "overallSummary": "...",
+  "strongSkills": ["..."],
+  "developingSkills": ["..."],
+  "activityRecommendations": { "Skill Name": ["activity 1", "activity 2", "activity 3"] },
+  "conceptRecommendations": [{ "subject": "...", "recommendation": "..." }],
+  "careerSuggestions": [{ "title": "...", "description": "..." }]
+}`;
+
+    // Step F - Call Gemini API
+    const apiKey = await getSecret('GEMINI_API_KEY');
+    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+
+    const apiResponse = await fetch(apiUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: promptText }] }],
+        generationConfig: { responseMimeType: 'application/json' }
+      })
+    });
+
+    if (!apiResponse.ok) {
+      throw new Error(`Gemini API returned status ${apiResponse.status}`);
+    }
+
+    const responseJson = await apiResponse.json();
+    const rawText = responseJson.candidates[0].content.parts[0].text;
+
+    // Step G - Parse with defensive error handling
+    let insightsObject = null;
+    try {
+      insightsObject = JSON.parse(rawText);
+    } catch (parseErr) {
+      console.error('[AIInsights] JSON parsing failed:', parseErr);
+      console.log('[AIInsights] Raw text was:', rawText);
+      
+      const cacheResult = await wixData.query('AIInsightsCache')
+        .eq('studentId', studentId)
+        .limit(1)
+        .find({ suppressAuth: true });
+        
+      if (cacheResult.items.length > 0) {
+        const record = cacheResult.items[0];
+        return ok({
+          headers: CORS_HEADERS,
+          body: JSON.stringify({
+            cached: true,
+            overallSummary: record.overallSummary,
+            strongSkills: record.strongSkills,
+            developingSkills: record.developingSkills,
+            activityRecommendations: record.activityRecommendations,
+            conceptRecommendations: record.conceptRecommendations,
+            careerSuggestions: record.careerSuggestions
+          })
+        });
+      } else {
+        return serverError({
+          headers: CORS_HEADERS,
+          body: JSON.stringify({ error: 'AI generation failed and no cache available' })
+        });
+      }
+    }
+
+    // Step H - Save to AIInsightsCache
+    const cacheResult = await wixData.query('AIInsightsCache')
+      .eq('studentId', studentId)
+      .limit(1)
+      .find({ suppressAuth: true });
+
+    const cacheData = {
+      studentId,
+      generatedAt: new Date(),
+      isStale: false,
+      overallSummary: insightsObject.overallSummary || '',
+      strongSkills: JSON.stringify(insightsObject.strongSkills || []),
+      developingSkills: JSON.stringify(insightsObject.developingSkills || []),
+      activityRecommendations: JSON.stringify(insightsObject.activityRecommendations || {}),
+      conceptRecommendations: JSON.stringify(insightsObject.conceptRecommendations || []),
+      careerSuggestions: JSON.stringify(insightsObject.careerSuggestions || [])
+    };
+
+    if (cacheResult.items.length > 0) {
+      await wixData.update('AIInsightsCache', {
+        ...cacheResult.items[0],
+        ...cacheData,
+        _id: cacheResult.items[0]._id
+      }, { suppressAuth: true });
+    } else {
+      await wixData.insert('AIInsightsCache', cacheData, { suppressAuth: true });
+    }
+
+    // Step I - Return result
+    return ok({
+      headers: CORS_HEADERS,
+      body: JSON.stringify({
+        cached: false,
+        overallSummary: insightsObject.overallSummary,
+        strongSkills: JSON.stringify(insightsObject.strongSkills),
+        developingSkills: JSON.stringify(insightsObject.developingSkills),
+        activityRecommendations: JSON.stringify(insightsObject.activityRecommendations),
+        conceptRecommendations: JSON.stringify(insightsObject.conceptRecommendations),
+        careerSuggestions: JSON.stringify(insightsObject.careerSuggestions)
+      })
+    });
+
+  } catch (err) {
+    console.error('getAIInsights outer error:', err);
+    try {
+      const studentId = request.query.studentId;
+      if (studentId) {
+        const cacheResult = await wixData.query('AIInsightsCache')
+          .eq('studentId', studentId)
+          .limit(1)
+          .find({ suppressAuth: true });
+        if (cacheResult.items.length > 0) {
+          const record = cacheResult.items[0];
+          return ok({
+            headers: CORS_HEADERS,
+            body: JSON.stringify({
+              cached: true,
+              overallSummary: record.overallSummary,
+              strongSkills: record.strongSkills,
+              developingSkills: record.developingSkills,
+              activityRecommendations: record.activityRecommendations,
+              conceptRecommendations: record.conceptRecommendations,
+              careerSuggestions: record.careerSuggestions
+            })
+          });
+        }
+      }
+    } catch (cacheFetchErr) {
+      console.error('getAIInsights outer error cache fallback query failed:', cacheFetchErr);
+    }
+    return serverError({ headers: CORS_HEADERS, body: JSON.stringify({ error: err.message }) });
+  }
+}
+
+export function options_getAIInsights(request) {
   return ok({ headers: CORS_HEADERS, body: '' });
 }
 
