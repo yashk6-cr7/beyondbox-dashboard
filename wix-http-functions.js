@@ -1825,25 +1825,51 @@ Return this exact JSON structure and NOTHING else:
 
     // Step F - Call Gemini API
     const apiKey = await getSecret('GEMINI_API_KEY');
-    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+    const models = ['gemini-3.5-flash', 'gemini-1.5-flash-latest', 'gemini-2.5-flash', 'gemini-1.5-flash'];
+    let rawText = '';
+    let lastError = null;
 
-    const apiResponse = await fetch(apiUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: promptText }] }],
-        generationConfig: { responseMimeType: 'application/json' }
-      })
-    });
+    for (const model of models) {
+      try {
+        const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+        console.log(`[AIInsights] Trying Gemini model: ${model}`);
+        
+        const apiResponse = await fetch(apiUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: promptText }] }],
+            generationConfig: { responseMimeType: 'application/json' }
+          })
+        });
 
-    if (!apiResponse.ok) {
-      throw new Error(`Gemini API returned status ${apiResponse.status}`);
+        if (apiResponse.status === 404) {
+          console.warn(`[AIInsights] Model ${model} returned 404, trying next...`);
+          continue;
+        }
+
+        if (!apiResponse.ok) {
+          throw new Error(`Gemini API returned status ${apiResponse.status}`);
+        }
+
+        const responseJson = await apiResponse.json();
+        if (!responseJson.candidates || !responseJson.candidates[0] || !responseJson.candidates[0].content || !responseJson.candidates[0].content.parts || !responseJson.candidates[0].content.parts[0]) {
+          throw new Error('Invalid response structure from Gemini API');
+        }
+
+        rawText = responseJson.candidates[0].content.parts[0].text;
+        break; // Successfully got response
+      } catch (err) {
+        console.error(`[AIInsights] Error with model ${model}:`, err.message);
+        lastError = err;
+      }
     }
 
-    const responseJson = await apiResponse.json();
-    const rawText = responseJson.candidates[0].content.parts[0].text;
+    if (!rawText) {
+      throw lastError || new Error('All Gemini models failed');
+    }
 
     // Step G - Parse with defensive error handling
     let insightsObject = null;
