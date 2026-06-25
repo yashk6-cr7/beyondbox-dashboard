@@ -1642,7 +1642,7 @@ export async function get_getAIInsights(request) {
         .find({ suppressAuth: true });
       if (cacheResult.items.length > 0) {
         const record = cacheResult.items[0];
-        if (record.isStale === false) {
+        if (!record.isStale) {
           return ok({
             headers: CORS_HEADERS,
             body: JSON.stringify({
@@ -1741,7 +1741,7 @@ export async function get_getAIInsights(request) {
     const promptText = `You are a senior educational analyst for Beyond Box, a STEAM learning platform for children.
 
 Generate a comprehensive, deeply personalized educational insight report for this student.
-Return ONLY a valid JSON object. No markdown. No extra text. No explanation. Just JSON.
+CRITICAL: Your entire response must be a single valid JSON object and nothing else. Do not include any text before the JSON. Do not include any text after the JSON. Do not wrap it in markdown code blocks. Do not add any explanation. Start your response with { and end with }.
 
 STUDENT PROFILE:
 Name: ${firstName}
@@ -1825,7 +1825,7 @@ Return this exact JSON structure and NOTHING else:
 
     // Step F - Call Gemini API
     const apiKey = await getSecret('GEMINI_API_KEY');
-    const models = ['gemini-3.5-flash', 'gemini-1.5-flash-latest', 'gemini-2.5-flash', 'gemini-1.5-flash'];
+    const models = ['gemini-2.0-flash', 'gemini-1.5-flash'];
     let rawText = '';
     let lastError = null;
 
@@ -1841,7 +1841,7 @@ Return this exact JSON structure and NOTHING else:
           },
           body: JSON.stringify({
             contents: [{ parts: [{ text: promptText }] }],
-            generationConfig: { responseMimeType: 'application/json' }
+            generationConfig: { temperature: 0.7 }
           })
         });
 
@@ -1874,7 +1874,11 @@ Return this exact JSON structure and NOTHING else:
     // Step G - Parse with defensive error handling
     let insightsObject = null;
     try {
-      insightsObject = JSON.parse(rawText);
+      let cleanText = rawText.trim();
+      if (cleanText.startsWith('```')) {
+        cleanText = cleanText.replace(/^```json?\n?/, '').replace(/```$/, '').trim();
+      }
+      insightsObject = JSON.parse(cleanText);
     } catch (parseErr) {
       console.error('[AIInsights] JSON parsing failed:', parseErr);
       console.log('[AIInsights] Raw text was:', rawText);
