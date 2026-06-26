@@ -1794,7 +1794,7 @@ Return this exact JSON structure and NOTHING else:
       console.error('[AIInsights] Failed to retrieve GEMINI_API_KEY from Secrets:', secretErr.message);
       return serverError({ headers: CORS_HEADERS, body: JSON.stringify({ error: 'Secret retrieval failed: ' + secretErr.message }) });
     }
-    const models = ['gemini-2.0-flash', 'gemini-1.5-flash'];
+    const models = ['gemini-3.5-flash', 'gemini-2.5-flash'];
     let rawText  = '';
     let lastError = null;
 
@@ -1817,7 +1817,17 @@ Return this exact JSON structure and NOTHING else:
           continue;
         }
         if (!apiResponse.ok) {
-          throw new Error(`Gemini API returned status ${apiResponse.status}`);
+          let errorDetail = '';
+          try {
+            const errorJson = await apiResponse.json();
+            errorDetail = JSON.stringify(errorJson);
+          } catch (_) {
+            try {
+              errorDetail = await apiResponse.text();
+            } catch (_) {}
+          }
+          console.error(`[AIInsights] Model ${model} failed with status ${apiResponse.status}. Details: ${errorDetail}`);
+          throw new Error(`Gemini API returned status ${apiResponse.status}: ${errorDetail}`);
         }
 
         const responseJson = await apiResponse.json();
@@ -1958,5 +1968,32 @@ Return this exact JSON structure and NOTHING else:
 }
 
 export function options_getAIInsights(request) {
+  return ok({ headers: CORS_HEADERS, body: '' });
+}
+
+// ─────────────────────────────────────────────────────────────
+// DIAGNOSTIC ENDPOINT — List active Gemini models for API key
+// ─────────────────────────────────────────────────────────────
+export async function get_listGeminiModels(request) {
+  try {
+    let apiKey;
+    try {
+      apiKey = await getSecret('GEMINI_API_KEY');
+    } catch (secretErr) {
+      console.error('[listGeminiModels] Failed to retrieve GEMINI_API_KEY:', secretErr.message);
+      return serverError({ headers: CORS_HEADERS, body: JSON.stringify({ error: 'Secret retrieval failed: ' + secretErr.message }) });
+    }
+
+    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`;
+    const response = await fetch(apiUrl);
+    const json = await response.json();
+    return ok({ headers: CORS_HEADERS, body: JSON.stringify(json) });
+  } catch (err) {
+    console.error('[listGeminiModels] error:', err);
+    return serverError({ headers: CORS_HEADERS, body: JSON.stringify({ error: err.message }) });
+  }
+}
+
+export function options_listGeminiModels(request) {
   return ok({ headers: CORS_HEADERS, body: '' });
 }
