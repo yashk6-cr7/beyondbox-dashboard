@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 
 // ─── Card 1: Tutor Feedback ────────────────────────────────────────────────
 function TutorFeedbackCard({ student }) {
@@ -64,29 +64,153 @@ const SKILL_CAREERS = {
 };
 
 function AIFeedbackCard({ student }) {
-  const xp       = student?.xp       ?? 0;
-  const level    = student?.level    ?? 1;
-  const badges   = (student?.badges  ?? []).filter(b => b.unlocked).length;
-  const books    = student?.booksCompleted ?? 0;
-  const name     = student?.name?.split(' ')[0] || 'The student';
+  const [aiData, setAiData] = useState(null);
+  const [aiLoading, setAiLoading] = useState(true);
+  const [aiError, setAiError] = useState(false);
 
-  // Dynamic skill sorting
+  const xp     = student?.xp    ?? 0;
+  const level  = student?.level ?? 1;
+  const badges = (student?.badges ?? []).filter(b => b.unlocked).length;
+  const books  = student?.booksCompleted ?? 0;
+  const name   = student?.name?.split(' ')[0] || 'The student';
+
+  // Fallback: skill sorting from existing data
   const skillEntries = Object.entries(student?.skillAverages || {}).map(([key, val]) => ({ key, val }));
   skillEntries.sort((a, b) => b.val - a.val);
-  
-  const strongSkills = skillEntries.slice(0, 3).map(s => s.key).filter(k => SKILL_NAMES[k]);
-  const developingSkills = skillEntries.slice(-3).map(s => s.key).filter(k => SKILL_NAMES[k]).reverse();
-
-  // Pick top 3 concepts for recommendations
-  const concepts = student?.concepts || [];
-  const conceptRecs = concepts.slice(0, 3).map(c => ({
+  const fallbackStrong     = skillEntries.slice(0, 3).map(s => s.key).filter(k => SKILL_NAMES[k]);
+  const fallbackDeveloping = skillEntries.slice(-3).map(s => s.key).filter(k => SKILL_NAMES[k]).reverse();
+  const fallbackConcepts   = (student?.concepts || []).slice(0, 3).map(c => ({
     subj: c.subject || 'General',
     rec: `Continue exploring ${c.conceptName || 'new ideas'}. Practice through real-world scenarios and visual models.`
   }));
 
-  if (conceptRecs.length === 0) {
-    conceptRecs.push({ subj: 'General Learning', rec: 'Keep reading books and participating in activities to unlock specific subject recommendations!' });
+  useEffect(() => {
+    const studentId = student?.studentId;
+    if (!studentId) {
+      setAiLoading(false);
+      setAiError(true);
+      return;
+    }
+
+    const baseUrl = 'https://www.thebeyondbox.org';
+
+    fetch(`${baseUrl}/_functions/getAIInsights?studentId=${studentId}`)
+      .then(res => {
+        if (!res.ok) throw new Error('API error: ' + res.status);
+        return res.json();
+      })
+      .then(data => {
+        const parse = (val, fallback) => {
+          if (!val) return fallback;
+          if (typeof val !== 'string') return val;
+          try { return JSON.parse(val); } catch { return fallback; }
+        };
+
+        setAiData({
+          overallSummary:          data.overallSummary || '',
+          strongSkills:            parse(data.strongSkills,            []),
+          developingSkills:        parse(data.developingSkills,        []),
+          activityRecommendations: parse(data.activityRecommendations, {}),
+          conceptRecommendations:  parse(data.conceptRecommendations,  []),
+          careerSuggestions:       parse(data.careerSuggestions,       [])
+        });
+        setAiLoading(false);
+      })
+      .catch(err => {
+        console.error('[AIFeedbackCard] Failed to fetch AI insights:', err);
+        setAiLoading(false);
+        setAiError(true);
+      });
+  }, [student?.studentId]);
+
+  // ── LOADING STATE ──
+  if (aiLoading) {
+    return (
+      <div className="card insight-card ai-card">
+        <div className="insight-card-header">
+          <div className="insight-card-icon ai-icon">✨</div>
+          <div>
+            <h3 className="card-title" style={{ margin: 0 }}>
+              Beyond Box AI Assistant <span className="ai-badge-tag">AI</span>
+            </h3>
+            <p className="card-subtitle" style={{ margin: 0 }}>Personalised insights powered by learning data</p>
+          </div>
+        </div>
+        <div className="ai-sections">
+          <p className="insight-text" style={{ fontStyle: 'italic', color: '#9ca3af', textAlign: 'center', padding: '2rem 0' }}>
+            Generating your personalised insights...
+          </p>
+        </div>
+      </div>
+    );
   }
+
+  // ── DETERMINE WHAT TO RENDER: AI data or fallback ──
+  const useAI = aiData && !aiError;
+
+  const strongSkills     = useAI ? aiData.strongSkills     : fallbackStrong;
+  const developingSkills = useAI ? aiData.developingSkills : fallbackDeveloping;
+
+  const renderActivityRecs = () => {
+    if (useAI && aiData.activityRecommendations && Object.keys(aiData.activityRecommendations).length > 0) {
+      return Object.entries(aiData.activityRecommendations).map(([skillName, activities]) => (
+        <div key={skillName} className="rec-block">
+          <div className="rec-block-title">{skillName}</div>
+          <ul className="rec-list">
+            {(activities || []).map((r, i) => <li key={i}>{r}</li>)}
+          </ul>
+        </div>
+      ));
+    }
+    return developingSkills.map(s => {
+      const info = SKILL_RECS[s];
+      if (!info) return null;
+      return (
+        <div key={s} className="rec-block">
+          <div className="rec-block-title">{info.title}</div>
+          <ul className="rec-list">
+            {info.recs.map((r, i) => <li key={i}>{r}</li>)}
+          </ul>
+        </div>
+      );
+    });
+  };
+
+  const conceptRecs = useAI && aiData.conceptRecommendations?.length > 0
+    ? aiData.conceptRecommendations.map(c => ({ subj: c.subject, rec: c.recommendation }))
+    : (fallbackConcepts.length > 0 ? fallbackConcepts : [{ subj: 'General Learning', rec: 'Keep reading books and participating in activities to unlock specific subject recommendations!' }]);
+
+  const renderCareerCards = () => {
+    if (useAI && aiData.careerSuggestions?.length > 0) {
+      const emojis = ['🎨','💻','🤝','🏃','💡','🎤','🚀','🌍'];
+      return aiData.careerSuggestions.map((c, i) => (
+        <div key={i} className="career-card">
+          <span className="career-emoji">{emojis[i] || '⭐'}</span>
+          <div>
+            <div className="career-title">{c.title}</div>
+            <div className="career-desc">{c.description}</div>
+          </div>
+        </div>
+      ));
+    }
+    return fallbackStrong.map(s => {
+      const info = SKILL_CAREERS[s];
+      if (!info) return null;
+      return (
+        <div key={s} className="career-card">
+          <span className="career-emoji">{info.emoji}</span>
+          <div>
+            <div className="career-title">{info.title}</div>
+            <div className="career-desc">{info.desc}</div>
+          </div>
+        </div>
+      );
+    });
+  };
+
+  const overallSummaryText = useAI && aiData.overallSummary
+    ? aiData.overallSummary
+    : `${name} is progressing well across their learning journey. With ${books} books completed, ${xp} XP earned, and ${badges} achievement badges at Level ${level}, engagement with the platform is consistent. Skill scores reflect a well-rounded learner with particular strengths in ${strongSkills.length > 0 ? strongSkills.join(', ') : 'multiple domains'}.`;
 
   return (
     <div className="card insight-card ai-card">
@@ -102,14 +226,22 @@ function AIFeedbackCard({ student }) {
 
       <div className="ai-sections">
 
-        {/* Overall */}
+        {/* Overall Performance Summary */}
         <div className="ai-section">
           <div className="ai-section-title">📊 Overall Performance Summary</div>
           <p className="insight-text">
-            {name} is progressing well across their learning journey.
-            With <strong>{books} books</strong> completed, <strong>{xp} XP</strong> earned, and <strong>{badges} achievement badges</strong> at Level {level},
-            engagement with the platform is consistent. Skill scores reflect a well-rounded learner
-            with particular strengths in {strongSkills.length > 0 ? strongSkills.map(k => SKILL_NAMES[k]).join(', ') : 'multiple domains'}.
+            {useAI
+              ? overallSummaryText
+              : (
+                <>
+                  {name} is progressing well across their learning journey.
+                  With <strong>{books} books</strong> completed, <strong>{xp} XP</strong> earned,
+                  and <strong>{badges} achievement badges</strong> at Level {level},
+                  engagement with the platform is consistent. Skill scores reflect a well-rounded learner
+                  with particular strengths in {strongSkills.length > 0 ? strongSkills.join(', ') : 'multiple domains'}.
+                </>
+              )
+            }
           </p>
         </div>
 
@@ -121,16 +253,16 @@ function AIFeedbackCard({ student }) {
               <div className="skill-analysis-group strong">
                 <div className="skill-group-label">💪 Strong Skills</div>
                 <div className="skill-pills">
-                  {strongSkills.map(s => (
-                    <span key={s} className="skill-pill skill-pill--strong">{SKILL_NAMES[s] || s}</span>
+                  {strongSkills.map((s, i) => (
+                    <span key={i} className="skill-pill skill-pill--strong">{s}</span>
                   ))}
                 </div>
               </div>
               <div className="skill-analysis-group developing">
                 <div className="skill-group-label">📈 Developing Skills</div>
                 <div className="skill-pills">
-                  {developingSkills.map(s => (
-                    <span key={s} className="skill-pill skill-pill--developing">{SKILL_NAMES[s] || s}</span>
+                  {developingSkills.map((s, i) => (
+                    <span key={i} className="skill-pill skill-pill--developing">{s}</span>
                   ))}
                 </div>
               </div>
@@ -143,18 +275,7 @@ function AIFeedbackCard({ student }) {
           <div className="ai-section">
             <div className="ai-section-title">🎯 Activity Recommendations</div>
             <div className="rec-grid">
-              {developingSkills.map(s => {
-                const info = SKILL_RECS[s];
-                if (!info) return null;
-                return (
-                  <div key={s} className="rec-block">
-                    <div className="rec-block-title">{info.title}</div>
-                    <ul className="rec-list">
-                      {info.recs.map((r, i) => <li key={i}>{r}</li>)}
-                    </ul>
-                  </div>
-                );
-              })}
+              {renderActivityRecs()}
             </div>
           </div>
         )}
@@ -172,27 +293,15 @@ function AIFeedbackCard({ student }) {
           </div>
         </div>
 
-        {/* Career Paths */}
+        {/* Career Path Suggestions */}
         {strongSkills.length > 0 && (
           <div className="ai-section">
             <div className="ai-section-title">🚀 Career Path Suggestions</div>
-            <p className="insight-text" style={{ marginBottom:'0.75rem' }}>
-              Based on strongest areas — {strongSkills.map(k => SKILL_NAMES[k].toLowerCase()).join(', ')}:
+            <p className="insight-text" style={{ marginBottom: '0.75rem' }}>
+              Based on strongest areas — {strongSkills.map(s => s.toLowerCase()).join(', ')}:
             </p>
             <div className="career-cards">
-              {strongSkills.map(s => {
-                const info = SKILL_CAREERS[s];
-                if (!info) return null;
-                return (
-                  <div key={s} className="career-card">
-                    <span className="career-emoji">{info.emoji}</span>
-                    <div>
-                      <div className="career-title">{info.title}</div>
-                      <div className="career-desc">{info.desc}</div>
-                    </div>
-                  </div>
-                );
-              })}
+              {renderCareerCards()}
             </div>
           </div>
         )}
