@@ -1607,30 +1607,32 @@ export async function get_getAIInsights(request) {
     }
 
     // Step B - Check AIInsightsCache first
+    let cacheRecord = null;
     try {
       const cacheResult = await wixData.query('AIInsightsCache')
         .eq('studentId', studentId)
         .limit(1)
         .find({ suppressAuth: true });
-      if (cacheResult.items.length > 0) {
-        const record = cacheResult.items[0];
-        if (!record.isStale) {
-          return ok({
-            headers: CORS_HEADERS,
-            body: JSON.stringify({
-              cached: true,
-              overallSummary: record.overallSummary,
-              strongSkills: record.strongSkills,
-              developingSkills: record.developingSkills,
-              activityRecommendations: record.activityRecommendations,
-              conceptRecommendations: record.conceptRecommendations,
-              careerSuggestions: record.careerSuggestions
-            })
-          });
-        }
-      }
+      cacheRecord = cacheResult.items[0] || null;
     } catch (cacheErr) {
-      console.warn('[AIInsights] Cache check failed, proceeding to generate:', cacheErr.message);
+      console.warn('[AIInsights] Cache query failed (non-fatal):', cacheErr.message);
+      cacheRecord = null;
+    }
+
+    if (cacheRecord && !cacheRecord.isStale) {
+      console.log('[AIInsights] Returning cached insights for:', studentId);
+      return ok({
+        headers: CORS_HEADERS,
+        body: JSON.stringify({
+          cached: true,
+          overallSummary:          cacheRecord.overallSummary          || '',
+          strongSkills:            cacheRecord.strongSkills            || '[]',
+          developingSkills:        cacheRecord.developingSkills        || '[]',
+          activityRecommendations: cacheRecord.activityRecommendations || '{}',
+          conceptRecommendations:  cacheRecord.conceptRecommendations  || '[]',
+          careerSuggestions:       cacheRecord.careerSuggestions       || '[]'
+        })
+      });
     }
 
     // Step C - Fetch all student data in parallel
@@ -1784,7 +1786,14 @@ Return this exact JSON structure and NOTHING else:
 }`;
 
     // Step F - Call Gemini API with fallback models
-    const apiKey = await getSecret('GEMINI_API_KEY');
+    let apiKey;
+    try {
+      apiKey = await getSecret('GEMINI_API_KEY');
+      console.log('[AIInsights] API key retrieved successfully, length:', apiKey?.length);
+    } catch (secretErr) {
+      console.error('[AIInsights] Failed to retrieve GEMINI_API_KEY from Secrets:', secretErr.message);
+      return serverError({ headers: CORS_HEADERS, body: JSON.stringify({ error: 'Secret retrieval failed: ' + secretErr.message }) });
+    }
     const models = ['gemini-2.0-flash', 'gemini-1.5-flash'];
     let rawText  = '';
     let lastError = null;
