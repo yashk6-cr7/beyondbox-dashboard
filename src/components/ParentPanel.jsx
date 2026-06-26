@@ -1,18 +1,4 @@
-import React, { useState, useEffect } from 'react';
-
-const WIX_BASE = 'https://www.thebeyondbox.org/_functions';
-
-// Helper to determine career emoji based on keywords
-function getCareerEmoji(title) {
-  const t = (title || '').toLowerCase();
-  if (t.includes('code') || t.includes('software') || t.includes('developer') || t.includes('computer') || t.includes('tech') || t.includes('data') || t.includes('analyst')) return '💻';
-  if (t.includes('design') || t.includes('art') || t.includes('creative') || t.includes('media') || t.includes('writer') || t.includes('architect') || t.includes('illustrator')) return '🎨';
-  if (t.includes('science') || t.includes('scientist') || t.includes('engineer') || t.includes('bio') || t.includes('chemist') || t.includes('research') || t.includes('physicist')) return '🔬';
-  if (t.includes('business') || t.includes('manager') || t.includes('operat') || t.includes('entrepreneur') || t.includes('lead') || t.includes('marketing')) return '💼';
-  if (t.includes('health') || t.includes('doctor') || t.includes('therapist') || t.includes('nurse') || t.includes('counsel') || t.includes('social worker')) return '🤝';
-  if (t.includes('teach') || t.includes('educat') || t.includes('professor') || t.includes('instructor')) return '🎓';
-  return '🚀';
-}
+import React, { useState } from 'react';
 
 // ─── Card 1: Tutor Feedback ────────────────────────────────────────────────
 function TutorFeedbackCard({ student }) {
@@ -50,59 +36,57 @@ function TutorFeedbackCard({ student }) {
 }
 
 // ─── Card 2: AI Assistant Feedback (Dynamic) ──────────────────────────────────
+const SKILL_NAMES = {
+  cognitive: 'Cognitive Thinking',
+  creative: 'Creative Problem Solving',
+  communication: 'Communication',
+  socialEmotional: 'Social-Emotional',
+  physical: 'Physical Coordination',
+  practical: 'Practical Application'
+};
+
+const SKILL_RECS = {
+  cognitive: { title: '🧩 Logical Reasoning', recs: ['Daily logic puzzles', 'Strategy board games — chess, Blokus', '"Why does this work?" conversations'] },
+  creative: { title: '🎨 Creative Expression', recs: ['Free drawing or design', 'Building without instructions', 'Storytelling activities'] },
+  communication: { title: '🗣️ Communication', recs: ['Reading aloud', 'Debating topics', 'Journaling daily'] },
+  socialEmotional: { title: '🤝 Social Collaboration', recs: ['Group projects', 'Role-playing scenarios', 'Emotion journaling'] },
+  physical: { title: '🏃 Physical Coordination', recs: ['Outdoor play with structured movement', 'Yoga or dance sessions', 'Group sports'] },
+  practical: { title: '🛠️ Practical Skills', recs: ['Fixing broken items safely', 'Cooking or baking math', 'Budgeting exercises'] }
+};
+
+const SKILL_CAREERS = {
+  cognitive: { emoji:'💻', title:'Software & Engineering', desc:'Coding, data science, or engineering' },
+  creative: { emoji:'🎨', title:'Design & Innovation', desc:'Product design, UX, architecture, or fashion' },
+  communication: { emoji:'🎤', title:'Media & Writing', desc:'Journalism, public relations, or broadcasting' },
+  socialEmotional: { emoji:'🤝', title:'Healthcare & Education', desc:'Counseling, medicine, or teaching' },
+  physical: { emoji:'🏃', title:'Sports & Therapy', desc:'Athletics, physical therapy, or coaching' },
+  practical: { emoji:'💡', title:'Entrepreneurship & Operations', desc:'Problem-solving with a real-world purpose' }
+};
+
 function AIFeedbackCard({ student }) {
-  const [aiLoading, setAiLoading] = useState(true);
-  const [aiError, setAiError] = useState(null);
-  const [aiData, setAiData] = useState(null);
+  const xp       = student?.xp       ?? 0;
+  const level    = student?.level    ?? 1;
+  const badges   = (student?.badges  ?? []).filter(b => b.unlocked).length;
+  const books    = student?.booksCompleted ?? 0;
+  const name     = student?.name?.split(' ')[0] || 'The student';
 
-  const studentId = student?.studentId;
+  // Dynamic skill sorting
+  const skillEntries = Object.entries(student?.skillAverages || {}).map(([key, val]) => ({ key, val }));
+  skillEntries.sort((a, b) => b.val - a.val);
+  
+  const strongSkills = skillEntries.slice(0, 3).map(s => s.key).filter(k => SKILL_NAMES[k]);
+  const developingSkills = skillEntries.slice(-3).map(s => s.key).filter(k => SKILL_NAMES[k]).reverse();
 
-  useEffect(() => {
-    if (!studentId) return;
+  // Pick top 3 concepts for recommendations
+  const concepts = student?.concepts || [];
+  const conceptRecs = concepts.slice(0, 3).map(c => ({
+    subj: c.subject || 'General',
+    rec: `Continue exploring ${c.conceptName || 'new ideas'}. Practice through real-world scenarios and visual models.`
+  }));
 
-    let active = true;
-    setAiLoading(true);
-    setAiError(null);
-
-    const url = `${WIX_BASE}/getAIInsights?studentId=${encodeURIComponent(studentId)}`;
-
-    fetch(url)
-      .then(res => {
-        if (!res.ok) {
-          throw new Error(`HTTP error! status: ${res.status}`);
-        }
-        return res.json();
-      })
-      .then(data => {
-        if (!active) return;
-        try {
-          const parsed = {
-            overallSummary: data.overallSummary || '',
-            strongSkills: JSON.parse(data.strongSkills || '[]'),
-            developingSkills: JSON.parse(data.developingSkills || '[]'),
-            activityRecommendations: JSON.parse(data.activityRecommendations || '{}'),
-            conceptRecommendations: JSON.parse(data.conceptRecommendations || '[]'),
-            careerSuggestions: JSON.parse(data.careerSuggestions || '[]')
-          };
-          setAiData(parsed);
-          setAiLoading(false);
-        } catch (e) {
-          console.error('[ParentPanel] Failed to parse AI insights:', e);
-          setAiError('Insights are being prepared. Please check back soon.');
-          setAiLoading(false);
-        }
-      })
-      .catch(err => {
-        if (!active) return;
-        console.error('[ParentPanel] Failed to fetch AI insights:', err);
-        setAiError('Insights are being prepared. Please check back soon.');
-        setAiLoading(false);
-      });
-
-    return () => {
-      active = false;
-    };
-  }, [studentId]);
+  if (conceptRecs.length === 0) {
+    conceptRecs.push({ subj: 'General Learning', rec: 'Keep reading books and participating in activities to unlock specific subject recommendations!' });
+  }
 
   return (
     <div className="card insight-card ai-card">
@@ -117,112 +101,102 @@ function AIFeedbackCard({ student }) {
       </div>
 
       <div className="ai-sections">
-        {aiLoading && (
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '3rem 0' }}>
-            <div className="loading-spinner" />
-            <p style={{ color: '#4b5563', fontSize: '0.9rem', fontWeight: 600, marginTop: '0.75rem', fontFamily: "'Nunito', sans-serif" }}>
-              Analyzing learning insights...
-            </p>
-          </div>
-        )}
 
-        {!aiLoading && aiError && (
-          <div style={{ padding: '2rem 1.5rem', textAlign: 'center', color: '#6b7280', fontStyle: 'italic', fontSize: '0.92rem', fontFamily: "'Nunito', sans-serif" }}>
-            {aiError}
-          </div>
-        )}
+        {/* Overall */}
+        <div className="ai-section">
+          <div className="ai-section-title">📊 Overall Performance Summary</div>
+          <p className="insight-text">
+            {name} is progressing well across their learning journey.
+            With <strong>{books} books</strong> completed, <strong>{xp} XP</strong> earned, and <strong>{badges} achievement badges</strong> at Level {level},
+            engagement with the platform is consistent. Skill scores reflect a well-rounded learner
+            with particular strengths in {strongSkills.length > 0 ? strongSkills.map(k => SKILL_NAMES[k]).join(', ') : 'multiple domains'}.
+          </p>
+        </div>
 
-        {!aiLoading && !aiError && aiData && (
-          <>
-            {/* Overall Summary */}
-            <div className="ai-section">
-              <div className="ai-section-title">📊 Overall Performance Summary</div>
-              <p className="insight-text">
-                {aiData.overallSummary}
-              </p>
+        {/* Skill Analysis */}
+        {strongSkills.length > 0 && (
+          <div className="ai-section">
+            <div className="ai-section-title">🧠 Skill Analysis</div>
+            <div className="skill-analysis-row">
+              <div className="skill-analysis-group strong">
+                <div className="skill-group-label">💪 Strong Skills</div>
+                <div className="skill-pills">
+                  {strongSkills.map(s => (
+                    <span key={s} className="skill-pill skill-pill--strong">{SKILL_NAMES[s] || s}</span>
+                  ))}
+                </div>
+              </div>
+              <div className="skill-analysis-group developing">
+                <div className="skill-group-label">📈 Developing Skills</div>
+                <div className="skill-pills">
+                  {developingSkills.map(s => (
+                    <span key={s} className="skill-pill skill-pill--developing">{SKILL_NAMES[s] || s}</span>
+                  ))}
+                </div>
+              </div>
             </div>
-
-            {/* Skill Analysis */}
-            {((aiData.strongSkills && aiData.strongSkills.length > 0) || 
-              (aiData.developingSkills && aiData.developingSkills.length > 0)) && (
-              <div className="ai-section">
-                <div className="ai-section-title">🧠 Skill Analysis</div>
-                <div className="skill-analysis-row">
-                  {aiData.strongSkills && aiData.strongSkills.length > 0 && (
-                    <div className="skill-analysis-group strong">
-                      <div className="skill-group-label">💪 Strong Skills</div>
-                      <div className="skill-pills">
-                        {aiData.strongSkills.map(s => (
-                          <span key={s} className="skill-pill skill-pill--strong">{s}</span>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                  {aiData.developingSkills && aiData.developingSkills.length > 0 && (
-                    <div className="skill-analysis-group developing">
-                      <div className="skill-group-label">📈 Developing Skills</div>
-                      <div className="skill-pills">
-                        {aiData.developingSkills.map(s => (
-                          <span key={s} className="skill-pill skill-pill--developing">{s}</span>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {/* Activity Recommendations */}
-            {aiData.activityRecommendations && Object.keys(aiData.activityRecommendations).length > 0 && (
-              <div className="ai-section">
-                <div className="ai-section-title">🎯 Activity Recommendations</div>
-                <div className="rec-grid">
-                  {Object.entries(aiData.activityRecommendations).map(([skill, recs]) => (
-                    <div key={skill} className="rec-block">
-                      <div className="rec-block-title">{skill}</div>
-                      <ul className="rec-list">
-                        {(recs || []).map((r, i) => <li key={i}>{r}</li>)}
-                      </ul>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Concept Recommendations */}
-            {aiData.conceptRecommendations && aiData.conceptRecommendations.length > 0 && (
-              <div className="ai-section">
-                <div className="ai-section-title">📚 Concept Recommendations</div>
-                <div className="concept-rec-list">
-                  {aiData.conceptRecommendations.map((c, i) => (
-                    <div key={i} className="concept-rec-item">
-                      <span className="concept-rec-subj">{c.subject}</span>
-                      <span className="concept-rec-text">→ {c.recommendation}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Career Suggestions */}
-            {aiData.careerSuggestions && aiData.careerSuggestions.length > 0 && (
-              <div className="ai-section">
-                <div className="ai-section-title">🚀 Career Path Suggestions</div>
-                <div className="career-cards">
-                  {aiData.careerSuggestions.map((c, i) => (
-                    <div key={i} className="career-card">
-                      <span className="career-emoji">{getCareerEmoji(c.title)}</span>
-                      <div>
-                        <div className="career-title">{c.title}</div>
-                        <div className="career-desc">{c.description}</div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </>
+          </div>
         )}
+
+        {/* Activity Recommendations */}
+        {developingSkills.length > 0 && (
+          <div className="ai-section">
+            <div className="ai-section-title">🎯 Activity Recommendations</div>
+            <div className="rec-grid">
+              {developingSkills.map(s => {
+                const info = SKILL_RECS[s];
+                if (!info) return null;
+                return (
+                  <div key={s} className="rec-block">
+                    <div className="rec-block-title">{info.title}</div>
+                    <ul className="rec-list">
+                      {info.recs.map((r, i) => <li key={i}>{r}</li>)}
+                    </ul>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Concept Recommendations */}
+        <div className="ai-section">
+          <div className="ai-section-title">📚 Concept Recommendations</div>
+          <div className="concept-rec-list">
+            {conceptRecs.map((c, i) => (
+              <div key={i} className="concept-rec-item">
+                <span className="concept-rec-subj">{c.subj}</span>
+                <span className="concept-rec-text">→ {c.rec}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Career Paths */}
+        {strongSkills.length > 0 && (
+          <div className="ai-section">
+            <div className="ai-section-title">🚀 Career Path Suggestions</div>
+            <p className="insight-text" style={{ marginBottom:'0.75rem' }}>
+              Based on strongest areas — {strongSkills.map(k => SKILL_NAMES[k].toLowerCase()).join(', ')}:
+            </p>
+            <div className="career-cards">
+              {strongSkills.map(s => {
+                const info = SKILL_CAREERS[s];
+                if (!info) return null;
+                return (
+                  <div key={s} className="career-card">
+                    <span className="career-emoji">{info.emoji}</span>
+                    <div>
+                      <div className="career-title">{info.title}</div>
+                      <div className="career-desc">{info.desc}</div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
       </div>
     </div>
   );
@@ -237,3 +211,4 @@ export default function ParentPanel({ student }) {
     </div>
   );
 }
+
